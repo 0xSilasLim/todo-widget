@@ -1,0 +1,19 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Only the local main widget may access its typed data and window actions.",
+  "windows": ["main"],
+  "permissions": [
+    "allow-load-widget",
+    "allow-reveal-widget",
+    "allow-save-todos",
+    "allow-update-settings",
+    "allow-reset-position",
+    "allow-start-drag",
+    "allow-start-resize",
+    "core:window:allow-minimize",
+    "core:window:allow-destroy",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten"
+  ]
+}

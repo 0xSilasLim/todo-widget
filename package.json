@@ -1,0 +1,38 @@
+{
+  "name": "todo-widget",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "check": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "test:rust": "node scripts/rust.mjs test",
+    "check:rust": "node scripts/rust.mjs clippy --all-targets -- -D warnings",
+    "format:rust": "node scripts/rust.mjs fmt",
+    "build": "npm run check && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "tauri": "node scripts/tauri.mjs",
+    "desktop:dev": "node scripts/tauri.mjs dev",
+    "desktop:build": "node scripts/tauri.mjs build",
+    "test:native": "node scripts/native-acceptance.mjs",
+    "test:single-instance": "node scripts/single-instance-acceptance.mjs",
+    "release:prepare": "node scripts/prepare-release.mjs"
+  },
+  "dependencies": {
+    "@lucide/vue": "^1.59.0",
+    "@tauri-apps/api": "^2.12.4",
+    "vue": "^3.5.22"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "@tauri-apps/cli": "^2.10.0",
+    "@vitejs/plugin-vue": "^6.0.1",
+    "@vue/test-utils": "^2.4.6",
+    "jsdom": "^27.0.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.12",
+    "vitest": "^3.2.4",
+    "vue-tsc": "^3.1.1"
+  }
+}

@@ -1,0 +1,81 @@
+# 验收记录
+
+日期：2026-10-19（Asia/Shanghai）。
+
+最初检查当前目录：未发现 Tauri 工程、`Cargo.toml` 或 `tauri.conf.json`；已有 Astro 博客和 Python 项目。因此在新的 `todo-widget/` 中独立搭建指定的 Tauri 2 + Vue 3 + TypeScript 工程，未修改已有项目。
+
+实现按“工程/权限 → 原生窗口 → 组件/状态/数据服务 → 测试/构建 → 原生交互验收”的计划完成。
+
+## 实际测试环境
+
+- Windows 11 25H2，Build 26200.8655，x64。
+- 1 台真实显示器，175% 缩放，窗口 DPI 168。
+- 主屏工作区域：原点 `(0, 0)`，物理尺寸 `2520 × 1596`，已扣除任务栏。
+- WebView2 Evergreen Runtime 155；Node.js 24.11.1；Rust 1.99.1 MSVC；Visual Studio 2022 C++ 工具链。
+- 实际依赖：Tauri/Rust 和前端 API 2.12.4，Store 插件 2.5.0，Single Instance 插件 2.5.4；具体版本固定在 Cargo.lock 和 package-lock.json。
+
+## 验收结果
+
+| 项目 | 结果 | 证据 |
+| --- | --- | --- |
+| 默认尺寸与右上角定位 | 通过 | 初次启动实测 `(1932, 28)`，`560 × 735` 物理像素；除以 1.75 为 `320 × 420` DIP；右边距 `2520 - 1932 - 560 = 28` 物理像素，即 16 DIP，顶部同样为 16 DIP。 |
+| 无边框透明窗口 | 通过 | 客户区与整个窗口实测尺寸相等；没有系统标题栏。原生窗口截图可看见后方桌面/窗口。圆角外截图 Alpha 为 0。 |
+| 20%–100% 背景透明度 | 通过 | 20% 截图背景 Alpha = 51；100% = 255。CSS 背景为 `rgba(244, 246, 249, 0.2)`，容器 opacity = 1。文字与控件未施加整体透明度。 |
+| Todo 功能 | 通过 | 在真实 WebView2 中新增 3 项、编辑文字、勾选完成、删除测试项，分别执行拖拽排序和 Alt+↑ 键盘排序并核对结果。 |
+| 任务与设置持久化 | 通过 | 退出整个进程后重新启动，恢复任务文字、完成状态、顺序、不透明度 20%、关闭置顶、锁定状态以及窗口几何。 |
+| 始终置顶切换 | 通过 | 切换后直接读取 Win32 `WS_EX_TOPMOST`，确认 true → false → true；重启后保留关闭状态。 |
+| 鼠标拖动位置 | 通过 | 使用 Windows 真实鼠标操作原生拖动区，窗口从 `(1932, 28)` 移到 `(1883, 196)`。使用 WebView2 `app-region: drag`。 |
+| 窗口大小调整 | 通过 | 使用真实鼠标拖动窗口右下边角，从 `560 × 735` 调整为 `493 × 649` 物理像素，列表和输入栏正常布局。 |
+| 位置锁定 | 通过 | 启用锁定后原生 resizable = false；实际拖动标题与边角后，`(1883,196,493,649)` 均未变化。应用命令 `start_drag` 和 `start_resize` 同时被拒绝。 |
+| 非默认位置/大小恢复 | 通过 | 移动并调整大小后使用 Alt+F4 退出，启动新进程后位置与尺寸仍为 `(1883,196,493,649)`，锁定仍开启。 |
+| 普通 Windows 窗口交互 | 通过 | 实际点击最小化，Win32 IsIconic = true；恢复成功；Alt+Tab 将前台从 Widget 切换到另一个进程；Alt+F4 退出成功。窗口不使用 tool window 样式，skipTaskbar = false。 |
+| 最小权限 | 通过 | 原生测试中 `plugin:store\|load`、直接 `window.set_always_on_top` 均被 capability 拒绝；数据服务通过专用应用命令工作。没有默认权限全集或任意文件路径入口。 |
+| 发布构建 | 通过 | 已生成包含单实例修复的发布 EXE 和 x64 NSIS 安装包（1,435,248 字节，约 1.37 MiB）。 |
+| 发布版启动 | 通过 | 实际运行 Release EXE，首次个人清单为空；原生尺寸、位置、置顶状态再次实测符合默认要求。发布窗口已打开。 |
+
+Tao 为 Windows 系统动画保留了 `WS_CAPTION` 样式位，同时通过非客户区计算去掉系统装饰；因此无边框验收使用“客户区 = 整窗尺寸”以及实际截图，不能只根据该样式位判断。
+
+## 自动检查
+
+| 命令 | 结果 |
+| --- | --- |
+| `npm run build` | Vue/TypeScript 检查与 Vite 生产构建通过。 |
+| `npm test` | 11 / 11 通过：组件、中文输入法、增删改/排序、保存快照、保存失败重试、关闭前等待写入、读取失败不覆盖、透明度边界。 |
+| `npm run test:rust` | 12 / 12 通过：100%/150%/200% DPI、负坐标、顶部/左侧任务栏、屏幕移除、重复显示器名称、工作区约束、几何往返、数据校验。 |
+| `npm run check:rust` | Clippy 所有 targets 通过，`-D warnings`。 |
+| `npm run test:native` | 真实 Tauri 进程/WebView2 自动验收通过，报告无 JS 错误。 |
+| `npm run test:single-instance` | 重复启动、最小化后恢复/聚焦、并发重复启动通过；复用原进程和窗口句柄，保留任务、几何与置顶状态。 |
+| `npm run desktop:build` | Release 构建与 NSIS 打包通过。 |
+
+已提交的[界面截图](docs/images/widget.png)来自隔离测试清单。原始报告、截图及测试数据保存在本机 `artifacts/` 中，该目录不上传到 Git；重新执行原生验收脚本可生成自己的报告。
+
+本次本地证据路径：
+
+- 完整原生报告：`artifacts/latest-native.json`
+- 背景 Alpha 与重启截图：`artifacts/native-1792413376654/`
+- 单实例自动回归报告：`artifacts/latest-single-instance.json`
+- 实际调整大小后的 Win32 测量：`artifacts/window-resized.json`
+- 锁定后尝试移动 / 缩放：`artifacts/window-locked-drag.json`、`artifacts/window-locked-resize.json`
+- Alt+Tab 前台进程测量：`artifacts/window-alt-tab.json`
+- 非默认几何的重启测量：`artifacts/window-geometry-restored.json`
+- 正式发布版启动测量：`artifacts/release-smoke.json`
+
+## 单实例修复验证
+
+此前每次启动都会创建新进程和窗口。先对旧 Debug EXE 运行新增回归脚本，确认第二次启动后两个进程都保留了窗口；本地复现报告为 `artifacts/single-instance-1792413131338/report.json`。
+
+现在使用官方 `tauri-plugin-single-instance`，在 Store 插件之前注册。后续启动退出新进程，并对原 `main` 窗口执行恢复、显示和聚焦；不改变清单、位置、大小或置顶偏好。没有增加前端 capability 权限。
+
+- Debug 原生回归通过：连续重复启动 3 次、最小化后再次启动、同时重复启动 3 次，均复用原窗口；原任务和关闭置顶的设置保持不变。
+- Release EXE 实测通过：连续重复启动 3 次，新进程均以退出码 0 结束；原进程 PID `40212` 和窗口句柄 `4723542` 不变，始终只有一个应用进程和窗口。
+- Release 使用实际窗口按钮最小化后，再次启动恢复同一窗口，前台进程重新成为 `40212`；位置、尺寸和置顶状态未变化。本地测量为 `artifacts/release-single-instance.json`。
+- 更新前已备份个人 Store；更新后的个人任务和设置与备份内容一致。测试任务仅写入隔离测试目录。
+- 本次重新通过 Debug 构建、Clippy、完整原生验收与 Release/NSIS 构建。新版 Release 窗口已重新打开；安装包未执行安装/卸载。
+
+## 仍需目标环境复核
+
+- 本机只有一个真实显示器；混合 DPI 双屏、不同任务栏方向、热拔插的几何分支由自动测试覆盖，尚未在对应真实硬件上操作验证。
+- 安装包已构建，没有执行安装/卸载，也没有验证其他 Windows 11 版本。
+- 此版本未添加账号、同步、后端 API、托盘或开机自启；最后两项不在本次需求中。
+
+测试数据在 `artifacts/` 内隔离保存，不写入个人清单。发布版个人数据使用 `%APPDATA%/com.local.todowidget/widget.json`。
