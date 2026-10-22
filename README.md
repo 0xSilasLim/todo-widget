@@ -2,7 +2,7 @@
 
 放在 Windows 11 桌面上的轻量待办便笺。随手记录、勾选完成，关闭后再打开，清单和窗口设置都会恢复。基于 Tauri 2、Vue 3 和 TypeScript，数据保存在本机，无需账号。
 
-**[下载最新版](https://github.com/0xSilasLim/todo_widget/releases/latest)** · [使用方法](#使用方法) · [开发与构建](#开发与构建) · [验收记录](ACCEPTANCE.md)
+**[下载最新版](https://github.com/0xSilasLim/todo-widget/releases/latest)** · [使用方法](#使用方法) · [开发与构建](#开发与构建) · [验收记录](ACCEPTANCE.md)
 
 <img src="docs/images/widget.png" alt="Todo Widget：透明背景、待办清单和窗口控制" width="320" />
 
@@ -12,11 +12,11 @@
 
 | 文件 | 用途 |
 | --- | --- |
-| [Todo-Widget-x64-setup.exe](https://github.com/0xSilasLim/todo_widget/releases/latest/download/Todo-Widget-x64-setup.exe) | 推荐。安装到当前 Windows 用户，之后从开始菜单启动。 |
-| [todo-widget.exe](https://github.com/0xSilasLim/todo_widget/releases/latest/download/todo-widget.exe) | 免安装版。放到固定目录，直接双击运行。 |
-| [SHA256SUMS.txt](https://github.com/0xSilasLim/todo_widget/releases/latest/download/SHA256SUMS.txt) | 两个发布文件的 SHA-256 校验值。 |
+| [Todo-Widget-x64-setup.exe](https://github.com/0xSilasLim/todo-widget/releases/latest/download/Todo-Widget-x64-setup.exe) | 推荐。安装到当前 Windows 用户，之后从开始菜单启动。 |
+| [todo-widget.exe](https://github.com/0xSilasLim/todo-widget/releases/latest/download/todo-widget.exe) | 免安装版。放到固定目录，直接双击运行。 |
+| [SHA256SUMS.txt](https://github.com/0xSilasLim/todo-widget/releases/latest/download/SHA256SUMS.txt) | 两个发布文件的 SHA-256 校验值。 |
 
-1. 下载上面的安装包，或前往 [Releases](https://github.com/0xSilasLim/todo_widget/releases) 选择版本。
+1. 下载上面的安装包，或前往 [Releases](https://github.com/0xSilasLim/todo-widget/releases) 选择版本。
 2. 双击安装包完成安装，再从开始菜单打开 **Todo Widget**。
 3. 首次启动时，窗口默认出现在主屏工作区右上角，尺寸为 320 × 420 逻辑像素，顶部和右侧各留 16 逻辑像素。
 
@@ -82,8 +82,8 @@
 开发环境需要 Windows 11、Node.js 24 LTS、Rust stable MSVC，以及 Visual Studio 2022 的 C++ 构建工具和 Windows SDK。详细环境说明见 [Tauri Windows 开发前置条件](https://v2.tauri.app/start/prerequisites/#windows)。
 
 ```powershell
-git clone https://github.com/0xSilasLim/todo_widget.git
-cd todo_widget
+git clone https://github.com/0xSilasLim/todo-widget.git
+cd todo-widget
 npm ci
 npm run desktop:dev
 ```
@@ -162,4 +162,4 @@ scripts/            开发、原生验收与发布文件整理
 
 本机只有一台真实显示器；混合 DPI 多屏、屏幕热拔插及其他任务栏方向由几何单元测试覆盖，尚未在对应硬件上复核。安装包已成功构建，安装 / 卸载流程尚未单独验收。
 
-遇到问题可在 [Issues](https://github.com/0xSilasLim/todo_widget/issues) 中说明应用版本、Windows 版本、缩放比例与复现步骤。
+遇到问题可在 [Issues](https://github.com/0xSilasLim/todo-widget/issues) 中说明应用版本、Windows 版本、缩放比例与复现步骤。
