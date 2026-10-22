@@ -72,6 +72,7 @@ try {
   report.checks.push('Three repeated launches exit successfully and reuse the original process and window handle')
 
   await page.getByLabel('新增待办', { exact: true }).fill('单实例回归：保留原有任务')
+  await page.getByLabel('新增待办优先级', { exact: true }).selectOption('p0')
   await page.getByRole('button', { name: '添加待办', exact: true }).click()
   await page.getByRole('button', { name: '取消始终置顶', exact: true }).click()
   await expect(page.getByText('已保存在本机', { exact: true })).toBeVisible()
@@ -87,6 +88,7 @@ try {
     assert.equal(report.restored.windows[0][key], beforeMinimize[key])
   }
   await expect(page.locator('.todo-text')).toHaveText(['单实例回归：保留原有任务'])
+  await expect(page.locator('.priority-badge')).toHaveAttribute('data-priority', 'p0')
   await expect(page.getByRole('button', { name: '始终置顶', exact: true })).toBeVisible()
   report.checks.push('Launching while minimized restores and focuses the same window, preserving geometry, tasks and topmost setting')
 

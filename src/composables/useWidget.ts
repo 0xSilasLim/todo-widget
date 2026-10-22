@@ -1,5 +1,5 @@
 import { computed, ref, toRaw } from 'vue'
-import { DEFAULT_SETTINGS, MAX_TODO_LENGTH, type Settings, type Todo } from '../types'
+import { DEFAULT_PRIORITY, DEFAULT_SETTINGS, MAX_TODO_LENGTH, type Priority, type Settings, type Todo } from '../types'
 import { widgetService } from '../services/widgetService'
 
 export function useWidget() {
@@ -57,19 +57,20 @@ export function useWidget() {
     return enqueue('todos', () => widgetService.saveTodos(snapshot))
   }
 
-  function add(text: string) {
+  function add(text: string, priority: Priority = DEFAULT_PRIORITY) {
     const trimmed = text.trim().slice(0, MAX_TODO_LENGTH)
     if (!trimmed || !ready.value) return false
-    todos.value.push({ id: crypto.randomUUID(), text: trimmed, completed: false })
+    todos.value.push({ id: crypto.randomUUID(), text: trimmed, completed: false, priority })
     void persistTodos()
     return true
   }
 
-  function edit(id: string, text: string) {
+  function edit(id: string, text: string, priority?: Priority) {
     const todo = todos.value.find((item) => item.id === id)
     const trimmed = text.trim().slice(0, MAX_TODO_LENGTH)
     if (!todo || !trimmed) return false
     todo.text = trimmed
+    if (priority !== undefined) todo.priority = priority
     void persistTodos()
     return true
   }

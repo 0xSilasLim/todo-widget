@@ -158,6 +158,80 @@ try {
   await opacity(88, 'settings-default.png')
   await page.getByRole('button', { name: '返回清单', exact: true }).click()
   await saveSettled()
+
+  const priorities = ['p0', 'p1', 'p2', 'p3']
+  const fixtureText = (priority) => `优先级验收 ${priority.toUpperCase()}`
+  const taskRow = (text) => page.locator('.todo-item').filter({ has: page.getByText(text, { exact: true }) })
+  await expect(page.getByLabel('新增待办优先级', { exact: true })).toHaveValue('p2')
+  for (const priority of priorities) {
+    await page.getByLabel('新增待办', { exact: true }).fill(fixtureText(priority))
+    await page.getByLabel('新增待办优先级', { exact: true }).selectOption(priority)
+    await page.getByRole('button', { name: '添加待办', exact: true }).click()
+    await expect(taskRow(fixtureText(priority)).locator('.priority-badge')).toHaveAttribute('data-priority', priority)
+    await expect(page.getByLabel('新增待办优先级', { exact: true })).toHaveValue('p2')
+  }
+  await page.getByRole('button', { name: `编辑：${fixtureText('p0')}`, exact: true }).click()
+  await page.getByLabel('编辑待办优先级', { exact: true }).selectOption('p3')
+  await page.getByRole('button', { name: '取消编辑', exact: true }).click()
+  await expect(taskRow(fixtureText('p0')).locator('.priority-badge')).toHaveAttribute('data-priority', 'p0')
+  await page.getByRole('button', { name: `编辑：${fixtureText('p0')}`, exact: true }).click()
+  await page.getByLabel('编辑待办优先级', { exact: true }).selectOption('p1')
+  await page.getByRole('button', { name: '保存编辑', exact: true }).click()
+  await saveSettled()
+  await close()
+  // Seed only the closed, isolated profile with a task from the previous schema.
+  const storePath = resolve(profile, 'widget.json')
+  const legacyText = '旧版待办优先级兼容'
+  const legacyStore = JSON.parse(readFileSync(storePath, 'utf8'))
+  legacyStore.todos.push({ id: 'legacy-priority-fixture', text: legacyText, completed: true })
+  writeFileSync(storePath, JSON.stringify(legacyStore, null, 2))
+  await launch()
+  for (const priority of priorities) {
+    await expect(taskRow(fixtureText(priority)).locator('.priority-badge')).toHaveAttribute('data-priority', priority === 'p0' ? 'p1' : priority)
+  }
+  await expect(taskRow(legacyText).locator('.priority-badge')).toHaveAttribute('data-priority', 'p2')
+  await expect(page.getByRole('checkbox', { name: `完成：${legacyText}`, exact: true })).toBeChecked()
+  await page.getByRole('button', { name: `编辑：${legacyText}`, exact: true }).click()
+  await page.getByLabel('编辑待办优先级', { exact: true }).selectOption('p0')
+  await page.getByRole('button', { name: '保存编辑', exact: true }).click()
+  await saveSettled()
+  const upgradedStore = JSON.parse(readFileSync(storePath, 'utf8'))
+  expect(upgradedStore.todos.map((todo) => todo.text)).toEqual(legacyStore.todos.map((todo) => todo.text))
+  expect(upgradedStore.todos.find((todo) => todo.id === 'legacy-priority-fixture')).toEqual({
+    id: 'legacy-priority-fixture', text: legacyText, completed: true, priority: 'p0',
+  })
+  await close()
+  await launch()
+  await expect(taskRow(legacyText).locator('.priority-badge')).toHaveAttribute('data-priority', 'p0')
+  report.checks.push('P0–P3 add/edit/cancel and full-process restart persist priorities; legacy tasks default to P2 while retaining text, completion and order')
+  for (const text of [...priorities.map(fixtureText), legacyText]) {
+    await page.getByRole('button', { name: `删除：${text}`, exact: true }).click()
+  }
+  await page.getByRole('button', { name: '编辑：完成窗口验收', exact: true }).click()
+  await page.getByLabel('编辑待办优先级', { exact: true }).selectOption('p0')
+  await page.getByRole('button', { name: '保存编辑', exact: true }).click()
+  await page.getByRole('button', { name: '编辑：整理今天的三件重点', exact: true }).click()
+  await page.getByLabel('编辑待办优先级', { exact: true }).selectOption('p1')
+  await page.getByRole('button', { name: '保存编辑', exact: true }).click()
+  await saveSettled()
+  await page.screenshot({ path: resolve(artifactDir, 'priorities.png'), omitBackground: true })
+  report.priorityLayout = await page.evaluate(() => {
+    const widget = document.querySelector('.widget')
+    const originalWidth = widget.style.width
+    const results = [280, 320, 375].map((width) => {
+      widget.style.width = `${width}px`
+      const right = widget.getBoundingClientRect().right
+      return { width, overflow: widget.scrollWidth > widget.clientWidth,
+        controlsFit: [...document.querySelectorAll('.composer > *, .todo-item')].every((element) => element.getBoundingClientRect().right <= right) }
+    })
+    widget.style.width = originalWidth
+    return results
+  })
+  for (const layout of report.priorityLayout) {
+    expect(layout.overflow).toBe(false)
+    expect(layout.controlsFit).toBe(true)
+  }
+  report.checks.push('Priority labels and composer controls fit content widths of 280, 320 and 375 CSS pixels without horizontal overflow')
   expect(report.errors).toEqual([])
   report.passed = true
   if (keepOpen) {

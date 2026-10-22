@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { ListChecks } from '@lucide/vue'
-import type { Todo } from '../types'
+import type { Priority, Todo } from '../types'
 import TodoItem from './TodoItem.vue'
 
 defineProps<{ todos: Todo[] }>()
 const emit = defineEmits<{
-  toggle: [id: string]; edit: [id: string, text: string]; remove: [id: string]
+  toggle: [id: string]; edit: [id: string, text: string, priority: Priority]; remove: [id: string]
   reorder: [id: string, target: string]; move: [id: string, offset: -1 | 1]
 }>()
 const draggedId = ref('')
@@ -45,7 +45,7 @@ function move(id: string, offset: -1 | 1) {
   <ol v-else class="todo-list" aria-label="待办列表">
     <TodoItem v-for="(todo, index) in todos" :key="todo.id" :todo="todo" :first="index === 0"
       :last="index === todos.length - 1" :dragging="draggedId === todo.id" :class="{ 'drop-target': dropId === todo.id }"
-      @toggle="$emit('toggle', $event)" @edit="(id, text) => $emit('edit', id, text)" @remove="$emit('remove', $event)"
+      @toggle="$emit('toggle', $event)" @edit="(id, text, priority) => $emit('edit', id, text, priority)" @remove="$emit('remove', $event)"
       @drag="startDrag" @drag-end="endDrag" @move="move" @dragover.prevent="dropId = todo.id" @drop.prevent="drop(todo.id)" />
   </ol>
   <span class="sr-only" aria-live="polite">{{ announcement }}</span>

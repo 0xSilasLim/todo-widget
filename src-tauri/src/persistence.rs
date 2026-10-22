@@ -7,11 +7,23 @@ use std::{
 use tauri::{AppHandle, Manager};
 use tauri_plugin_store::{Store, StoreExt};
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Priority {
+    P0,
+    P1,
+    #[default]
+    P2,
+    P3,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Todo {
     pub id: String,
     pub text: String,
     pub completed: bool,
+    #[serde(default)]
+    pub priority: Priority,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -180,14 +192,53 @@ mod tests {
             id: "one".into(),
             text: "test".into(),
             completed: false,
+            priority: Priority::P2,
         };
         assert!(validate_todos(std::slice::from_ref(&valid)).is_ok());
         assert!(validate_todos(&[valid.clone(), valid]).is_err());
         assert!(validate_todos(&[Todo {
             id: "two".into(),
             text: "  ".into(),
-            completed: false
+            completed: false,
+            priority: Priority::P2,
         }])
         .is_err());
+    }
+
+    #[test]
+    fn legacy_todos_default_to_p2_without_changing_existing_fields() {
+        let todo: Todo = serde_json::from_value(serde_json::json!({
+            "id": "legacy", "text": "原有待办", "completed": true
+        }))
+        .unwrap();
+        assert_eq!(todo.priority, Priority::P2);
+        assert_eq!(
+            serde_json::to_value(todo).unwrap(),
+            serde_json::json!({
+                "id": "legacy", "text": "原有待办", "completed": true, "priority": "p2"
+            })
+        );
+    }
+
+    #[test]
+    fn all_priorities_round_trip_and_invalid_values_are_rejected() {
+        for value in ["p0", "p1", "p2", "p3"] {
+            let json = serde_json::json!({
+                "id": "one", "text": "任务", "completed": false, "priority": value
+            });
+            let todo: Todo = serde_json::from_value(json.clone()).unwrap();
+            assert!(validate_todos(std::slice::from_ref(&todo)).is_ok());
+            assert_eq!(serde_json::to_value(todo).unwrap(), json);
+        }
+        for value in [
+            serde_json::json!("p4"),
+            serde_json::json!(0),
+            serde_json::Value::Null,
+        ] {
+            assert!(serde_json::from_value::<Todo>(serde_json::json!({
+                "id": "one", "text": "任务", "completed": false, "priority": value
+            }))
+            .is_err());
+        }
     }
 }

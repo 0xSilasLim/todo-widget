@@ -21,10 +21,10 @@ beforeEach(() => {
 
 describe('local task state', () => {
   it('restores the saved order, completion, text and settings', async () => {
-    service.load.mockResolvedValue({ todos: [{ id: 'one', text: '已保存', completed: true }], settings: { ...DEFAULT_SETTINGS, locked: true, backgroundOpacity: 0.2 } })
+    service.load.mockResolvedValue({ todos: [{ id: 'one', text: '已保存', completed: true, priority: 'p1' }], settings: { ...DEFAULT_SETTINGS, locked: true, backgroundOpacity: 0.2 } })
     const widget = useWidget()
     await widget.initialize()
-    expect(widget.todos.value[0]).toEqual({ id: 'one', text: '已保存', completed: true })
+    expect(widget.todos.value[0]).toEqual({ id: 'one', text: '已保存', completed: true, priority: 'p1' })
     expect(widget.settings.value.locked).toBe(true)
     expect(widget.settings.value.backgroundOpacity).toBe(0.2)
     expect(service.saveTodos).not.toHaveBeenCalled()
@@ -33,23 +33,35 @@ describe('local task state', () => {
   it('adds, edits, completes, sorts and deletes using ordered snapshots', async () => {
     const widget = useWidget()
     await widget.initialize()
-    expect(widget.add('  第一件事  ')).toBe(true)
-    widget.add('第二件事')
+    expect(widget.add('  第一件事  ', 'p0')).toBe(true)
+    widget.add('第二件事', 'p3')
     const first = widget.todos.value[0].id
     const second = widget.todos.value[1].id
-    widget.edit(first, '修改后的任务')
+    widget.edit(first, '修改后的任务', 'p1')
     widget.toggle(first)
     widget.moveBy(second, -1)
     await widget.flush()
     expect(service.saveTodos).toHaveBeenLastCalledWith([
-      { id: second, text: '第二件事', completed: false },
-      { id: first, text: '修改后的任务', completed: true },
+      { id: second, text: '第二件事', completed: false, priority: 'p3' },
+      { id: first, text: '修改后的任务', completed: true, priority: 'p1' },
     ])
-    expect(service.saveTodos.mock.calls[0][0]).toEqual([{ id: first, text: '第一件事', completed: false }])
+    expect(service.saveTodos.mock.calls[0][0]).toEqual([{ id: first, text: '第一件事', completed: false, priority: 'p0' }])
     widget.remove(first)
     await widget.flush()
     expect(widget.remaining.value).toBe(1)
-    expect(service.saveTodos).toHaveBeenLastCalledWith([{ id: second, text: '第二件事', completed: false }])
+    expect(service.saveTodos).toHaveBeenLastCalledWith([{ id: second, text: '第二件事', completed: false, priority: 'p3' }])
+  })
+
+  it('defaults new tasks to P2 and preserves priority when only text is edited', async () => {
+    const widget = useWidget()
+    await widget.initialize()
+    widget.add('普通任务')
+    const id = widget.todos.value[0].id
+    expect(widget.todos.value[0].priority).toBe('p2')
+    widget.edit(id, '设为紧急', 'p0')
+    widget.edit(id, '仅修改文字')
+    await widget.flush()
+    expect(service.saveTodos).toHaveBeenLastCalledWith([{ id, text: '仅修改文字', completed: false, priority: 'p0' }])
   })
 
   it('rejects blank tasks and empty edits without writing', async () => {

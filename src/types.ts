@@ -1,7 +1,15 @@
+export const PRIORITIES = ['p0', 'p1', 'p2', 'p3'] as const
+export type Priority = typeof PRIORITIES[number]
+export const DEFAULT_PRIORITY: Priority = 'p2'
+export const PRIORITY_LABELS: Record<Priority, string> = {
+  p0: '紧急', p1: '高', p2: '普通', p3: '低',
+}
+
 export interface Todo {
   id: string
   text: string
   completed: boolean
+  priority: Priority
 }
 
 export interface Settings {
