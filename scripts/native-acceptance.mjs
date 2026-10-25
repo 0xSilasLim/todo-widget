@@ -144,7 +144,8 @@ try {
   const denied = await page.evaluate(async () => {
     const results = {}
     for (const [command, args] of [['start_drag', {}], ['start_resize', { direction: 'SouthEast' }],
-      ['plugin:store|load', { path: 'unauthorized.json' }], ['plugin:window|set_always_on_top', { label: 'main', value: true }]]) {
+      ['plugin:store|load', { path: 'unauthorized.json' }], ['plugin:window|set_always_on_top', { label: 'main', value: true }],
+      ['plugin:notification|notify', { options: { title: 'Denied renderer notification' } }]]) {
       try { await window.__TAURI_INTERNALS__.invoke(command, args); results[command] = 'ALLOWED' } catch (error) { results[command] = String(error) }
     }
     return results
@@ -280,7 +281,7 @@ try {
       widget.style.width = `${width}px`
       const right = widget.getBoundingClientRect().right
       return { width, overflow: widget.scrollWidth > widget.clientWidth,
-        controlsFit: [...document.querySelectorAll('.composer > *, .task-tab, .todo-item, .delete-actions button')].every((element) => element.getBoundingClientRect().right <= right) }
+        controlsFit: [...document.querySelectorAll('.composer-inputs > *, .task-tab, .todo-item, .delete-actions button, .deadline-badge, .deadline-fields input')].every((element) => element.getBoundingClientRect().right <= right) }
     })
     widget.style.width = originalWidth
     return results
@@ -296,6 +297,159 @@ try {
     expect(layout.controlsFit).toBe(true)
   }
   report.checks.push('Both task views, tabs, priorities, composer and deletion confirmation fit widths of 280, 320 and 375 CSS pixels without horizontal overflow')
+
+  // Exercise deadlines through the same date/time controls as the desktop user.
+  const parts = (timestamp) => {
+    const date = new Date(timestamp), pad = (value) => String(value).padStart(2, '0')
+    return { date: `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`, time: `${pad(date.getHours())}:${pad(date.getMinutes())}` }
+  }
+  const readStore = () => JSON.parse(readFileSync(storePath, 'utf8'))
+  async function enterDeadline(timestamp, prefix) {
+    const value = parts(timestamp)
+    await page.locator(`#${prefix}-date`).fill(value.date)
+    await page.locator(`#${prefix}-time`).fill(value.time)
+  }
+  async function addDeadlineTask(text, timestamp) {
+    await page.getByLabel('新增待办', { exact: true }).fill(text)
+    await page.locator('.deadline-toggle').click()
+    await enterDeadline(timestamp, 'new-deadline')
+    await page.getByRole('button', { name: '添加待办', exact: true }).click()
+    await saveSettled()
+    const task = readStore().todos.find((todo) => todo.text === text)
+    expect(task.dueAt).toBe(Math.floor(timestamp / 60_000) * 60_000)
+    await expect(page.locator('.deadline-toggle')).toHaveAttribute('aria-expanded', 'false')
+    return task
+  }
+  const deadlineText = 'DDL 验收：完成阅读与笔记'
+  let deadlineTask = await addDeadlineTask(deadlineText, Date.now() + 2 * 86_400_000)
+  await expect(taskRow(deadlineText).locator('.deadline-badge')).toHaveClass(/deadline-neutral/)
+  const initialDueAt = deadlineTask.dueAt
+  await taskRow(deadlineText).locator('.deadline-badge').click()
+  await enterDeadline(Date.now() - 3_600_000, `deadline-${deadlineTask.id}`)
+  await page.getByRole('button', { name: '取消编辑', exact: true }).click()
+  expect(readStore().todos.find((todo) => todo.id === deadlineTask.id).dueAt).toBe(initialDueAt)
+  await taskRow(deadlineText).locator('.deadline-badge').click()
+  await enterDeadline(Date.now() + 12 * 3_600_000, `deadline-${deadlineTask.id}`)
+  report.deadlineEditorLayout = await measureLayout()
+  await page.getByRole('button', { name: '保存编辑', exact: true }).click()
+  await saveSettled()
+  await expect(taskRow(deadlineText).locator('.deadline-badge')).toHaveClass(/deadline-soon/)
+  const shortText = 'DDL 验收：即将截止'
+  const shortTask = await addDeadlineTask(shortText, Date.now() + 30 * 60_000)
+  await expect(taskRow(shortText).locator('.deadline-badge')).toHaveClass(/deadline-urgent/)
+  const overdueText = 'DDL 验收：已逾期'
+  await addDeadlineTask(overdueText, Date.now() - 2 * 3_600_000)
+  await expect(taskRow(overdueText).locator('.deadline-badge')).toHaveClass(/deadline-overdue/)
+  await page.screenshot({ path: resolve(artifactDir, 'deadlines.png'), omitBackground: true })
+  report.deadlineLayout = await measureLayout()
+  await page.locator('.deadline-toggle').click()
+  await page.locator('#new-deadline-date').fill(parts(Date.now() + 86_400_000).date)
+  await expect(page.locator('#new-deadline-time')).toHaveValue('23:59')
+  report.composerDeadlineLayout = await measureLayout()
+  await page.getByRole('button', { name: '清除 DDL', exact: true }).click()
+  await page.locator('.deadline-toggle').click()
+  for (const layout of [...report.deadlineLayout, ...report.deadlineEditorLayout, ...report.composerDeadlineLayout]) {
+    expect(layout.overflow).toBe(false)
+    expect(layout.controlsFit).toBe(true)
+  }
+  await page.getByRole('checkbox', { name: `完成：${shortText}`, exact: true }).click()
+  await showCompleted()
+  await expect(taskRow(shortText).locator('.deadline-badge')).toHaveClass(/deadline-neutral/)
+  await expect(taskRow(shortText).locator('.deadline-remaining')).toHaveCount(0)
+  await saveSettled()
+  await close()
+  await launch()
+  await showCompleted()
+  await expect(taskRow(shortText).locator('.deadline-badge')).toContainText(parts(shortTask.dueAt).time)
+  await page.getByRole('checkbox', { name: `恢复：${shortText}`, exact: true }).click()
+  await showPending()
+  expect(readStore().todos.find((todo) => todo.id === shortTask.id).dueAt).toBe(shortTask.dueAt)
+  await taskRow(shortText).locator('.deadline-badge').click()
+  await page.getByRole('button', { name: '清除 DDL', exact: true }).click()
+  await page.getByRole('button', { name: '保存编辑', exact: true }).click()
+  await saveSettled()
+  expect(readStore().todos.find((todo) => todo.id === shortTask.id).dueAt).toBeUndefined()
+  await expect(taskRow(shortText).locator('.deadline-badge')).toHaveText('设置 DDL')
+  report.checks.push('DDL add/edit/cancel/clear, date-only 23:59, all urgency levels, completion/restore, persisted timestamps, restart, and narrow editor layouts pass')
+
+  // Native scheduler: an isolated, synthetic task with a real near-future DDL.
+  // Other fixture deadlines are cleared before enabling OS notifications.
+  for (const text of [deadlineText, overdueText]) {
+    await taskRow(text).locator('.deadline-badge').click()
+    await page.getByRole('button', { name: '清除 DDL', exact: true }).click()
+    await page.getByRole('button', { name: '保存编辑', exact: true }).click()
+  }
+  const reminderText = 'DDL 自动验收提醒（测试任务）'
+  const reminderTask = await addDeadlineTask(reminderText, Date.now() + 90_000)
+  await page.getByRole('button', { name: '窗口设置', exact: true }).click()
+  await page.locator('#deadline-notifications').check()
+  await saveSettled()
+  await page.getByRole('button', { name: '返回清单', exact: true }).click()
+  await page.getByRole('button', { name: '最小化', exact: true }).click()
+  await expect.poll(() => readStore().deadlineReminders?.[reminderTask.id]?.stage, { timeout: 35_000 }).toBe(1)
+  report.reminderWhileMinimized = measure().minimized
+  expect(report.reminderWhileMinimized).toBe(true)
+  await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('reveal_widget'))
+  await close()
+  await launch()
+  expect(readStore().deadlineReminders[reminderTask.id]).toEqual({ dueAt: reminderTask.dueAt, stage: 1 })
+  await expect.poll(() => readStore().deadlineReminders?.[reminderTask.id]?.stage, { timeout: 120_000 }).toBe(2)
+  await close()
+  await launch()
+  expect(readStore().deadlineReminders[reminderTask.id]).toEqual({ dueAt: reminderTask.dueAt, stage: 2 })
+  await page.getByRole('checkbox', { name: `完成：${reminderText}`, exact: true }).click()
+  await showCompleted()
+  await taskRow(reminderText).locator('.deadline-badge').click()
+  await enterDeadline(Date.now() - 60_000, `deadline-${reminderTask.id}`)
+  await page.getByRole('button', { name: '保存编辑', exact: true }).click()
+  await saveSettled()
+  await pause(16_000)
+  expect(readStore().deadlineReminders[reminderTask.id]).toBeUndefined()
+  await page.getByRole('checkbox', { name: `恢复：${reminderText}`, exact: true }).click()
+  await expect.poll(() => readStore().deadlineReminders?.[reminderTask.id]?.stage, { timeout: 25_000 }).toBe(2)
+  await showPending()
+  await taskRow(reminderText).locator('.deadline-badge').click()
+  await page.getByRole('button', { name: '清除 DDL', exact: true }).click()
+  await page.getByRole('button', { name: '保存编辑', exact: true }).click()
+  await saveSettled()
+  expect(readStore().deadlineReminders[reminderTask.id]).toBeUndefined()
+  await page.getByRole('button', { name: '窗口设置', exact: true }).click()
+  await page.locator('#deadline-notifications').uncheck()
+  await saveSettled()
+  await page.getByRole('button', { name: '返回清单', exact: true }).click()
+  report.checks.push('Rust scheduler submits 1-hour/due reminders while minimized, persists deduplication through process restarts, skips completed tasks, rearms changed deadlines and stops after clear/disable; Windows banner delivery remains subject to OS settings')
+  // Use a compact synthetic fixture for shareable screenshots, never personal data.
+  const screenshotNow = Date.now()
+  await page.evaluate((now) => window.__TAURI_INTERNALS__.invoke('save_todos', { todos: [
+    { id: 'ddl-docs-one', text: '完成论文阅读与笔记', completed: false, priority: 'p1', createdAt: now - 3_600_000, dueAt: now + 6 * 3_600_000 },
+    { id: 'ddl-docs-two', text: '提交本周工作总结', completed: false, priority: 'p0', createdAt: now - 7_200_000, dueAt: now + 35 * 60_000 },
+  ] }), screenshotNow)
+  await close()
+  await launch()
+  await page.screenshot({ path: resolve(artifactDir, 'deadlines-docs.png'), omitBackground: true })
+  await page.locator('.deadline-toggle').click()
+  report.minimumHeightLayout = await page.evaluate(() => {
+    const widget = document.querySelector('.widget')
+    const originalWidth = widget.style.width, originalHeight = widget.style.height
+    const results = [280, 320, 375].map((width) => {
+      widget.style.width = `${width}px`; widget.style.height = '320px'
+      const bounds = widget.getBoundingClientRect()
+      const footer = document.querySelector('.widget-footer').getBoundingClientRect()
+      const tabs = document.querySelector('.task-tabs').getBoundingClientRect()
+      const composer = document.querySelector('.composer').getBoundingClientRect()
+      return { width, height: 320, footerFits: footer.bottom <= bounds.bottom, tabsDoNotOverlapComposer: tabs.bottom <= composer.top,
+        overflow: widget.scrollWidth > widget.clientWidth }
+    })
+    widget.style.width = originalWidth; widget.style.height = originalHeight
+    return results
+  })
+  for (const layout of report.minimumHeightLayout) {
+    expect(layout.footerFits).toBe(true)
+    expect(layout.tabsDoNotOverlapComposer).toBe(true)
+    expect(layout.overflow).toBe(false)
+  }
+  await page.locator('.deadline-toggle').click()
+  report.checks.push('Expanded composer remains usable at the minimum 320px height with no tab overlap or clipped footer')
   expect(report.errors).toEqual([])
   report.passed = true
   if (keepOpen) {

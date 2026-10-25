@@ -3,6 +3,7 @@ compile_error!("Todo Widget only supports Windows 11.");
 
 mod geometry;
 mod persistence;
+mod reminders;
 mod window;
 
 use persistence::{Settings, Todo, WidgetData, WidgetState};
@@ -91,6 +92,7 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             if windows_version::OsVersion::current().build < 22000 {
                 return Err("Todo Widget 仅支持 Windows 11（Build 22000 及以上）".into());
@@ -99,6 +101,7 @@ pub fn run() {
             let window = app.get_webview_window("main").ok_or("找不到主窗口")?;
             window::initialize(&window, &state)?;
             app.manage(state);
+            reminders::start(app.handle().clone())?;
             Ok(())
         })
         .on_window_event(|window, event| {

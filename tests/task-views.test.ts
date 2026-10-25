@@ -5,7 +5,7 @@ import { DEFAULT_SETTINGS, type Todo, type WidgetData } from '../src/types'
 
 const service = vi.hoisted(() => ({
   isDesktop: vi.fn(() => true), load: vi.fn(), reveal: vi.fn(),
-  saveTodos: vi.fn(), guardClose: vi.fn(),
+  saveTodos: vi.fn(), guardClose: vi.fn(), watchReminderErrors: vi.fn(),
 }))
 vi.mock('../src/services/widgetService', () => ({ widgetService: service }))
 
@@ -18,6 +18,7 @@ beforeEach(() => {
   service.isDesktop.mockReturnValue(true)
   service.reveal.mockResolvedValue(undefined)
   service.guardClose.mockResolvedValue(() => {})
+  service.watchReminderErrors.mockResolvedValue(() => {})
   service.load.mockImplementation(async () => structuredClone(stored))
   service.saveTodos.mockImplementation(async (todos: Todo[]) => { stored.todos = structuredClone(todos) })
 })

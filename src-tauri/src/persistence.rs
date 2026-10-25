@@ -26,6 +26,8 @@ pub struct Todo {
     pub priority: Priority,
     #[serde(default, rename = "createdAt", skip_serializing_if = "Option::is_none")]
     pub created_at: Option<u64>,
+    #[serde(default, rename = "dueAt", skip_serializing_if = "Option::is_none")]
+    pub due_at: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -34,6 +36,7 @@ pub struct Settings {
     pub always_on_top: bool,
     pub locked: bool,
     pub background_opacity: f64,
+    pub deadline_notifications: bool,
 }
 
 impl Default for Settings {
@@ -42,6 +45,7 @@ impl Default for Settings {
             always_on_top: true,
             locked: false,
             background_opacity: 0.88,
+            deadline_notifications: false,
         }
     }
 }
@@ -65,6 +69,8 @@ pub struct WidgetState {
     pub store: Arc<Store<tauri::Wry>>,
     pub settings: Mutex<Settings>,
     pub positioning: AtomicBool,
+    // Serialize task/settings changes with the native reminder check.
+    pub write_lock: Mutex<()>,
 }
 
 fn validate_todos(todos: &[Todo]) -> Result<(), String> {
@@ -81,6 +87,7 @@ fn validate_todos(todos: &[Todo]) -> Result<(), String> {
             || todo
                 .created_at
                 .is_some_and(|value| value > 8_640_000_000_000_000)
+            || todo.due_at.is_some_and(|value| value > 253_402_300_799_999)
         {
             return Err("待办数据无效：内容需为 1–500 字，且标识不能重复".into());
         }
@@ -114,6 +121,7 @@ impl WidgetState {
             store,
             settings: Mutex::new(settings),
             positioning: AtomicBool::new(false),
+            write_lock: Mutex::new(()),
         })
     }
 
@@ -134,23 +142,43 @@ impl WidgetState {
 
     pub fn save_todos(&self, todos: Vec<Todo>) -> Result<(), String> {
         validate_todos(&todos)?;
+        let _guard = self.write_lock.lock().map_err(|error| error.to_string())?;
+        let previous = self.store.get("todos");
+        let previous_reminders = self.store.get("deadlineReminders");
+        let mut reminders = crate::reminders::load_records(&self.store)?;
+        crate::reminders::retain_current(&mut reminders, &todos);
+        self.store.set(
+            "deadlineReminders",
+            serde_json::to_value(reminders).map_err(|error| error.to_string())?,
+        );
         self.store.set("schemaVersion", serde_json::json!(1));
         self.store.set(
             "todos",
             serde_json::to_value(todos).map_err(|error| error.to_string())?,
         );
-        self.store.save().map_err(|error| error.to_string())
+        if let Err(error) = self.store.save() {
+            restore_value(&self.store, "todos", previous);
+            restore_value(&self.store, "deadlineReminders", previous_reminders);
+            return Err(error.to_string());
+        }
+        Ok(())
     }
 
     pub fn save_settings(&self, settings: Settings) -> Result<(), String> {
         settings.validate()?;
-        *self.settings.lock().map_err(|error| error.to_string())? = settings.clone();
+        let _guard = self.write_lock.lock().map_err(|error| error.to_string())?;
+        let previous = self.store.get("settings");
         self.store.set("schemaVersion", serde_json::json!(1));
         self.store.set(
             "settings",
-            serde_json::to_value(settings).map_err(|error| error.to_string())?,
+            serde_json::to_value(&settings).map_err(|error| error.to_string())?,
         );
-        self.store.save().map_err(|error| error.to_string())
+        if let Err(error) = self.store.save() {
+            restore_value(&self.store, "settings", previous);
+            return Err(error.to_string());
+        }
+        *self.settings.lock().map_err(|error| error.to_string())? = settings;
+        Ok(())
     }
 
     pub fn ensure_unlocked(&self) -> Result<(), String> {
@@ -163,6 +191,21 @@ impl WidgetState {
             Err("位置已锁定，请先在设置中解锁".into())
         } else {
             Ok(())
+        }
+    }
+}
+
+pub(crate) fn restore_value(
+    store: &Store<tauri::Wry>,
+    key: &str,
+    value: Option<serde_json::Value>,
+) {
+    match value {
+        Some(value) => {
+            store.set(key, value);
+        }
+        None => {
+            store.delete(key);
         }
     }
 }
@@ -199,6 +242,7 @@ mod tests {
             completed: false,
             priority: Priority::P2,
             created_at: None,
+            due_at: None,
         };
         assert!(validate_todos(std::slice::from_ref(&valid)).is_ok());
         assert!(validate_todos(&[valid.clone(), valid]).is_err());
@@ -208,6 +252,7 @@ mod tests {
             completed: false,
             priority: Priority::P2,
             created_at: None,
+            due_at: None,
         }])
         .is_err());
     }
@@ -277,5 +322,38 @@ mod tests {
         }))
         .unwrap();
         assert!(validate_todos(&[todo]).is_err());
+    }
+
+    #[test]
+    fn deadlines_round_trip_and_old_tasks_and_settings_keep_safe_defaults() {
+        let todo: Todo = serde_json::from_value(serde_json::json!({
+            "id":"one", "text":"任务", "completed":false, "dueAt":1_792_924_800_000_u64
+        }))
+        .unwrap();
+        assert_eq!(todo.due_at, Some(1_792_924_800_000));
+        assert!(validate_todos(std::slice::from_ref(&todo)).is_ok());
+        let restored: Todo = serde_json::from_value(serde_json::to_value(todo).unwrap()).unwrap();
+        assert_eq!(restored.due_at, Some(1_792_924_800_000));
+        let old: Todo = serde_json::from_value(
+            serde_json::json!({"id":"old","text":"旧任务","completed":true}),
+        )
+        .unwrap();
+        assert_eq!(old.due_at, None);
+        let settings: Settings =
+            serde_json::from_value(serde_json::json!({"locked":true})).unwrap();
+        assert!(!settings.deadline_notifications);
+        assert!(settings.locked);
+        for value in [
+            serde_json::json!(-1),
+            serde_json::json!(1.5),
+            serde_json::json!("tomorrow"),
+        ] {
+            assert!(serde_json::from_value::<Todo>(
+                serde_json::json!({"id":"one","text":"任务","completed":false,"dueAt":value})
+            )
+            .is_err());
+        }
+        let invalid: Todo = serde_json::from_value(serde_json::json!({"id":"one","text":"任务","completed":false,"dueAt":253_402_300_800_000_u64})).unwrap();
+        assert!(validate_todos(&[invalid]).is_err());
     }
 }

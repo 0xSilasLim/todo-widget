@@ -16,6 +16,8 @@ const previewOpacity = ref<number>()
 const backgroundStyle = computed(() => ({ '--background-opacity': previewOpacity.value ?? settings.value.backgroundOpacity }))
 const directions = ['North', 'NorthEast', 'East', 'SouthEast', 'South', 'SouthWest', 'West', 'NorthWest']
 let unlistenClose: UnlistenFn | undefined
+let unlistenReminders: UnlistenFn | undefined
+const reminderError = ref('')
 
 function resize(direction: string) {
   if (!settings.value.locked && ready.value) void model.runWindowAction(() => widgetService.startResize(direction))
@@ -25,9 +27,10 @@ function toggleSettings() { settingsOpen.value = !settingsOpen.value; previewOpa
 
 onMounted(async () => {
   if (widgetService.isDesktop()) unlistenClose = await widgetService.guardClose(model.close)
+  if (widgetService.isDesktop()) unlistenReminders = await widgetService.watchReminderErrors((message) => { reminderError.value = message })
   await model.initialize()
 })
-onBeforeUnmount(() => unlistenClose?.())
+onBeforeUnmount(() => { unlistenClose?.(); unlistenReminders?.() })
 </script>
 
 <template>
@@ -36,6 +39,7 @@ onBeforeUnmount(() => unlistenClose?.())
       @drag="model.runWindowAction(widgetService.startDrag)" @pin="model.updateSettings({ alwaysOnTop: !settings.alwaysOnTop })"
       @settings="toggleSettings" @minimize="model.runWindowAction(widgetService.minimize)" @close="model.close" />
     <div v-if="error" class="error-banner" role="alert"><span>{{ error }}</span><button @click="model.retry">重试</button></div>
+    <div v-if="reminderError" class="error-banner" role="status">桌面提醒暂不可用，将自动重试：{{ reminderError }}</div>
     <div v-if="loading" class="loading-state" role="status">正在读取本地清单…</div>
     <template v-else-if="ready">
       <SettingsPanel v-if="settingsOpen" :settings="settings" @back="toggleSettings"

@@ -26,6 +26,10 @@ function preview(event: Event) {
     <label class="setting-row" for="lock-position"><span><strong>锁定位置</strong><small>同时暂停拖动和大小调整</small></span>
       <input id="lock-position" class="switch" type="checkbox" :checked="settings.locked"
         @change="$emit('update', { locked: ($event.target as HTMLInputElement).checked })" /></label>
+    <label class="setting-row" for="deadline-notifications"><span><strong>桌面通知提醒</strong><small>DDL 前 1 小时、截止时各提醒一次</small></span>
+      <input id="deadline-notifications" class="switch" type="checkbox" :checked="settings.deadlineNotifications"
+        @change="$emit('update', { deadlineNotifications: ($event.target as HTMLInputElement).checked })" /></label>
+    <p class="hint">应用运行或最小化时提醒，完全退出后停止。Windows 勿扰模式可能隐藏通知横幅。</p>
     <div class="opacity-setting"><label for="background-opacity">背景不透明度 <output for="background-opacity">{{ opacity }}%</output></label>
       <input id="background-opacity" type="range" min="20" max="100" step="1" :value="opacity" @input="preview"
         @change="$emit('update', { backgroundOpacity: opacity / 100 })" />

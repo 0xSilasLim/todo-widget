@@ -11,12 +11,14 @@ export interface Todo {
   completed: boolean
   priority: Priority
   createdAt?: number | null
+  dueAt?: number | null
 }
 
 export interface Settings {
   alwaysOnTop: boolean
   locked: boolean
   backgroundOpacity: number
+  deadlineNotifications: boolean
 }
 
 export interface WidgetData {
@@ -28,6 +30,7 @@ export const DEFAULT_SETTINGS: Settings = {
   alwaysOnTop: true,
   locked: false,
   backgroundOpacity: 0.88,
+  deadlineNotifications: false,
 }
 
 export const MAX_TODO_LENGTH = 500

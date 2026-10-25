@@ -3,13 +3,15 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { ListChecks } from '@lucide/vue'
 import type { Priority, Todo } from '../types'
 import TodoItem from './TodoItem.vue'
+import { useClock } from '../composables/useClock'
 
 const props = defineProps<{ todos: Todo[] }>()
 const emit = defineEmits<{
-  toggle: [id: string]; edit: [id: string, text: string, priority: Priority]; remove: [id: string]
+  toggle: [id: string]; edit: [id: string, text: string, priority: Priority, dueAt: number | null]; remove: [id: string]
   reorder: [id: string, target: string]; move: [id: string, offset: -1 | 1]
 }>()
 const draggedId = ref('')
+const now = useClock()
 const dropId = ref('')
 const announcement = ref('')
 const tabs = ['pending', 'completed'] as const
@@ -108,9 +110,9 @@ function move(id: string, offset: -1 | 1) {
         <template v-else><p>今天，先做一件事</p><span>在下方记下待办，完成后轻轻勾选。</span></template>
       </div>
       <ol v-else class="todo-list" :aria-label="activeTab === 'pending' ? '待办列表' : '已完成任务列表'">
-        <TodoItem v-for="(todo, index) in visibleTodos" :key="todo.id" :todo="todo" :first="index === 0"
+        <TodoItem v-for="(todo, index) in visibleTodos" :key="todo.id" :todo="todo" :now="now" :first="index === 0"
           :last="index === visibleTodos.length - 1" :dragging="draggedId === todo.id" :class="{ 'drop-target': dropId === todo.id }"
-          @toggle="toggle" @edit="(id, text, priority) => $emit('edit', id, text, priority)" @remove="remove"
+          @toggle="toggle" @edit="(id, text, priority, dueAt) => $emit('edit', id, text, priority, dueAt)" @remove="remove"
           @drag="startDrag" @drag-end="endDrag" @move="move" @dragover.prevent="!todo.completed && (dropId = todo.id)" @drop.prevent="!todo.completed && drop(todo.id)" />
       </ol>
     </div>

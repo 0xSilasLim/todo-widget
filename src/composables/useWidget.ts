@@ -57,20 +57,21 @@ export function useWidget() {
     return enqueue('todos', () => widgetService.saveTodos(snapshot))
   }
 
-  function add(text: string, priority: Priority = DEFAULT_PRIORITY) {
+  function add(text: string, priority: Priority = DEFAULT_PRIORITY, dueAt: number | null = null) {
     const trimmed = text.trim().slice(0, MAX_TODO_LENGTH)
     if (!trimmed || !ready.value) return false
-    todos.value.push({ id: crypto.randomUUID(), text: trimmed, completed: false, priority, createdAt: Date.now() })
+    todos.value.push({ id: crypto.randomUUID(), text: trimmed, completed: false, priority, createdAt: Date.now(), ...(dueAt == null ? {} : { dueAt }) })
     void persistTodos()
     return true
   }
 
-  function edit(id: string, text: string, priority?: Priority) {
+  function edit(id: string, text: string, priority?: Priority, dueAt?: number | null) {
     const todo = todos.value.find((item) => item.id === id)
     const trimmed = text.trim().slice(0, MAX_TODO_LENGTH)
     if (!todo || !trimmed) return false
     todo.text = trimmed
     if (priority !== undefined) todo.priority = priority
+    if (dueAt !== undefined) todo.dueAt = dueAt
     void persistTodos()
     return true
   }

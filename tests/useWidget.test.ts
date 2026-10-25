@@ -170,4 +170,24 @@ describe('local task state', () => {
     await widget.updateSettings({ backgroundOpacity: 2 })
     expect(service.saveSettings).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, backgroundOpacity: 1 })
   })
+
+  it('preserves deadlines through text edits, sorting, completion and restore, and can change or clear them', async () => {
+    const widget = useWidget()
+    await widget.initialize()
+    const dueAt = createdAt + 3_600_000
+    widget.add('带截止时间', 'p1', dueAt)
+    const id = widget.todos.value[0].id
+    widget.edit(id, '修改内容')
+    widget.toggle(id)
+    widget.toggle(id)
+    widget.add('另一件')
+    widget.moveBy(id, 1)
+    await widget.flush()
+    expect(widget.todos.value.find((todo) => todo.id === id)?.dueAt).toBe(dueAt)
+    widget.edit(id, '修改内容', 'p0', dueAt + 60_000)
+    expect(widget.todos.value.find((todo) => todo.id === id)?.dueAt).toBe(dueAt + 60_000)
+    widget.edit(id, '修改内容', 'p0', null)
+    await widget.flush()
+    expect(service.saveTodos.mock.lastCall?.[0].find((todo: Todo) => todo.id === id)).toMatchObject({ dueAt: null, createdAt })
+  })
 })
