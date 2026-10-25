@@ -99,7 +99,8 @@ try {
   }
   const originalCreatedAt = await page.locator('.todo-item').first().locator('time').getAttribute('datetime')
   expect(Math.abs(Date.parse(originalCreatedAt) - Date.now())).toBeLessThan(60_000)
-  await expect(page.locator('.todo-item').first().locator('time')).toHaveText(/^添加于 \d{2}\/\d{2}\s\d{2}:\d{2}$/)
+  await expect(page.locator('.todo-item').first().locator('time')).toHaveText(/^\d{2}\/\d{2}\s\d{2}:\d{2}$/)
+  await expect(page.locator('.todo-item').first().locator('time')).toHaveAttribute('aria-label', /^添加于 /)
   await page.getByRole('button', { name: '编辑：整理今天的重点', exact: true }).click()
   await page.getByRole('textbox', { name: '编辑待办内容', exact: true }).fill('整理今天的三件重点')
   await page.getByRole('textbox', { name: '编辑待办内容', exact: true }).press('Enter')
@@ -281,6 +282,13 @@ try {
       widget.style.width = `${width}px`
       const right = widget.getBoundingClientRect().right
       return { width, overflow: widget.scrollWidth > widget.clientWidth,
+        metadataSingleLine: [...document.querySelectorAll('.todo-meta')].every((meta) => {
+          const bounds = meta.getBoundingClientRect()
+          return meta.scrollWidth <= meta.clientWidth && [...meta.children].every((element) => {
+            const rect = element.getBoundingClientRect()
+            return Math.abs(rect.top - bounds.top) < 1 && rect.height <= 17 && rect.left >= bounds.left && rect.right <= bounds.right
+          })
+        }),
         controlsFit: [...document.querySelectorAll('.composer-inputs > *, .task-tab, .todo-item, .delete-actions button, .deadline-badge, .deadline-fields input')].every((element) => element.getBoundingClientRect().right <= right) }
     })
     widget.style.width = originalWidth
@@ -294,6 +302,7 @@ try {
   await showPending()
   for (const layout of [...report.priorityLayout, ...report.completedLayout]) {
     expect(layout.overflow).toBe(false)
+    expect(layout.metadataSingleLine).toBe(true)
     expect(layout.controlsFit).toBe(true)
   }
   report.checks.push('Both task views, tabs, priorities, composer and deletion confirmation fit widths of 280, 320 and 375 CSS pixels without horizontal overflow')
@@ -350,12 +359,13 @@ try {
   await page.locator('.deadline-toggle').click()
   for (const layout of [...report.deadlineLayout, ...report.deadlineEditorLayout, ...report.composerDeadlineLayout]) {
     expect(layout.overflow).toBe(false)
+    expect(layout.metadataSingleLine).toBe(true)
     expect(layout.controlsFit).toBe(true)
   }
   await page.getByRole('checkbox', { name: `完成：${shortText}`, exact: true }).click()
   await showCompleted()
   await expect(taskRow(shortText).locator('.deadline-badge')).toHaveClass(/deadline-neutral/)
-  await expect(taskRow(shortText).locator('.deadline-remaining')).toHaveCount(0)
+  await expect(taskRow(shortText).locator('.deadline-badge')).toHaveAttribute('title', /已完成/)
   await saveSettled()
   await close()
   await launch()

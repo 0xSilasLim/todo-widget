@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { Check, GripVertical, Pencil, Trash2, X } from '@lucide/vue'
+import { Check, Clock, GripVertical, Pencil, Trash2, X } from '@lucide/vue'
 import { DEFAULT_PRIORITY, MAX_TODO_LENGTH, PRIORITY_LABELS, type Priority, type Todo } from '../types'
 import PrioritySelect from './PrioritySelect.vue'
 import DeadlineEditor from './DeadlineEditor.vue'
@@ -19,6 +19,7 @@ const draftDeadline = ref<number | null>(null)
 const deadlineValid = ref(true)
 const deadlineEditor = ref<InstanceType<typeof DeadlineEditor>>()
 const deadline = computed(() => props.todo.dueAt == null ? undefined : deadlineStatus(props.todo.dueAt, props.now ?? Date.now(), props.todo.completed))
+const deadlineDetails = computed(() => deadline.value ? `截止于 ${deadline.value.fullLabel}；${deadline.value.remaining}；点击修改` : '设置截止日期和时间')
 const input = ref<HTMLTextAreaElement>()
 const editButton = ref<HTMLButtonElement>()
 const deleteButton = ref<HTMLButtonElement>()
@@ -99,16 +100,15 @@ function editKey(event: KeyboardEvent) {
       </div>
       <div class="todo-meta">
         <span class="priority-badge" :class="`priority-${todo.priority}`" :data-priority="todo.priority"
-          :title="`优先级：${todo.priority.toUpperCase()} ${PRIORITY_LABELS[todo.priority]}`">{{ todo.priority.toUpperCase() }} · {{ PRIORITY_LABELS[todo.priority] }}</span>
-        <div class="todo-timing">
-          <time v-if="createdDate" class="todo-created" :datetime="createdDate.toISOString()" :title="`添加于 ${fullCreatedTime}`">添加于 {{ createdTime }}</time>
-          <span v-else class="todo-created">添加时间未知</span>
-          <button class="deadline-badge" :class="`deadline-${deadline?.tone ?? 'neutral'}`" :aria-label="`设置截止时间：${todo.text}`"
-            :title="deadline ? `截止于 ${deadline.fullLabel}；点击修改` : '设置截止日期和时间'" @click="beginEdit(true)">
-            <template v-if="deadline"><span>DDL {{ deadline.label }}</span><span v-if="!todo.completed" class="deadline-remaining">{{ deadline.remaining }}</span></template>
-            <span v-else>设置 DDL</span>
-          </button>
-        </div>
+          :title="`优先级：${todo.priority.toUpperCase()} ${PRIORITY_LABELS[todo.priority]}`"
+          :aria-label="`优先级：${todo.priority.toUpperCase()} ${PRIORITY_LABELS[todo.priority]}`">{{ todo.priority.toUpperCase() }}</span>
+        <time v-if="createdDate" class="todo-created" :datetime="createdDate.toISOString()" :title="`添加于 ${fullCreatedTime}`" :aria-label="`添加于 ${fullCreatedTime}`"><Clock :size="12" aria-hidden="true" />{{ createdTime }}</time>
+        <span v-else class="todo-created">添加时间未知</span>
+        <button class="deadline-badge" :class="`deadline-${deadline?.tone ?? 'neutral'}`" :aria-label="`设置截止时间：${todo.text}`"
+          :aria-description="deadlineDetails" :title="deadlineDetails" @click="beginEdit(true)">
+          <span v-if="deadline">{{ deadline.tone === 'overdue' ? '逾期' : 'DDL' }} {{ deadline.label }}</span>
+          <span v-else>设置 DDL</span>
+        </button>
       </div>
     </template>
     <div v-else class="edit-form">
