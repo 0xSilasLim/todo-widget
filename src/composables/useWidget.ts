@@ -60,7 +60,7 @@ export function useWidget() {
   function add(text: string, priority: Priority = DEFAULT_PRIORITY) {
     const trimmed = text.trim().slice(0, MAX_TODO_LENGTH)
     if (!trimmed || !ready.value) return false
-    todos.value.push({ id: crypto.randomUUID(), text: trimmed, completed: false, priority })
+    todos.value.push({ id: crypto.randomUUID(), text: trimmed, completed: false, priority, createdAt: Date.now() })
     void persistTodos()
     return true
   }
@@ -90,15 +90,16 @@ export function useWidget() {
   function move(id: string, targetId: string) {
     const source = todos.value.findIndex((todo) => todo.id === id)
     const target = todos.value.findIndex((todo) => todo.id === targetId)
-    if (source < 0 || target < 0 || source === target) return
+    if (source < 0 || target < 0 || source === target || todos.value[source].completed || todos.value[target].completed) return
     const [todo] = todos.value.splice(source, 1)
     todos.value.splice(target, 0, todo)
     void persistTodos()
   }
 
   function moveBy(id: string, offset: -1 | 1) {
-    const index = todos.value.findIndex((todo) => todo.id === id)
-    const target = todos.value[index + offset]
+    const pendingTodos = todos.value.filter((todo) => !todo.completed)
+    const index = pendingTodos.findIndex((todo) => todo.id === id)
+    const target = pendingTodos[index + offset]
     if (index >= 0 && target) move(id, target.id)
   }
 

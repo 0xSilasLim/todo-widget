@@ -24,6 +24,8 @@ pub struct Todo {
     pub completed: bool,
     #[serde(default)]
     pub priority: Priority,
+    #[serde(default, rename = "createdAt", skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -76,6 +78,9 @@ fn validate_todos(todos: &[Todo]) -> Result<(), String> {
             || !ids.insert(&todo.id)
             || todo.text.trim().is_empty()
             || todo.text.chars().count() > 500
+            || todo
+                .created_at
+                .is_some_and(|value| value > 8_640_000_000_000_000)
         {
             return Err("待办数据无效：内容需为 1–500 字，且标识不能重复".into());
         }
@@ -193,6 +198,7 @@ mod tests {
             text: "test".into(),
             completed: false,
             priority: Priority::P2,
+            created_at: None,
         };
         assert!(validate_todos(std::slice::from_ref(&valid)).is_ok());
         assert!(validate_todos(&[valid.clone(), valid]).is_err());
@@ -201,6 +207,7 @@ mod tests {
             text: "  ".into(),
             completed: false,
             priority: Priority::P2,
+            created_at: None,
         }])
         .is_err());
     }
@@ -212,6 +219,7 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(todo.priority, Priority::P2);
+        assert_eq!(todo.created_at, None);
         assert_eq!(
             serde_json::to_value(todo).unwrap(),
             serde_json::json!({
@@ -240,5 +248,34 @@ mod tests {
             }))
             .is_err());
         }
+    }
+
+    #[test]
+    fn creation_time_round_trips_and_invalid_timestamps_are_rejected() {
+        for timestamp in [0, 1_792_924_800_000_u64, 8_640_000_000_000_000] {
+            let json = serde_json::json!({
+                "id": "one", "text": "任务", "completed": false,
+                "priority": "p0", "createdAt": timestamp
+            });
+            let todo: Todo = serde_json::from_value(json.clone()).unwrap();
+            assert!(validate_todos(std::slice::from_ref(&todo)).is_ok());
+            assert_eq!(serde_json::to_value(todo).unwrap(), json);
+        }
+        for value in [
+            serde_json::json!("today"),
+            serde_json::json!(-1),
+            serde_json::json!(1.5),
+        ] {
+            assert!(serde_json::from_value::<Todo>(serde_json::json!({
+                "id": "one", "text": "任务", "completed": false, "createdAt": value
+            }))
+            .is_err());
+        }
+        let todo: Todo = serde_json::from_value(serde_json::json!({
+            "id": "one", "text": "任务", "completed": true,
+            "createdAt": 8_640_000_000_000_001_u64
+        }))
+        .unwrap();
+        assert!(validate_todos(&[todo]).is_err());
     }
 }

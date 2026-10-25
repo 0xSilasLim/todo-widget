@@ -61,6 +61,17 @@ describe('widget controls', () => {
     expect(item.emitted('edit')).toEqual([['one', '任务', 'p1']])
   })
 
+  it('shows local creation time with the full timestamp available and labels legacy tasks honestly', () => {
+    const createdAt = Date.UTC(2026, 9, 25, 2, 30)
+    const item = mount(TodoItem, { props: { todo: { id: 'new', text: '有时间的任务', completed: false, priority: 'p2', createdAt }, first: true, last: true, dragging: false } })
+    expect(item.get('time').attributes('datetime')).toBe('2026-10-25T02:30:00.000Z')
+    expect(item.get('time').text()).toMatch(/^添加于 \d{2}\/\d{2}\s\d{2}:\d{2}$/)
+    expect(item.get('time').attributes('title')).toContain('2026')
+    const legacy = mount(TodoItem, { props: { todo: { id: 'old', text: '旧任务', completed: true, priority: 'p1' }, first: true, last: true, dragging: false } })
+    expect(legacy.find('time').exists()).toBe(false)
+    expect(legacy.text()).toContain('添加时间未知')
+  })
+
   it('previews opacity before committing, and disables reset when locked', async () => {
     const panel = mount(SettingsPanel, { props: { settings: { ...DEFAULT_SETTINGS, locked: true } } })
     const range = panel.get('input[type="range"]')

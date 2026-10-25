@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useWidget } from '../src/composables/useWidget'
-import { DEFAULT_SETTINGS } from '../src/types'
+import { DEFAULT_SETTINGS, type Todo } from '../src/types'
 
 const service = vi.hoisted(() => ({
   isDesktop: vi.fn(() => true), load: vi.fn(), reveal: vi.fn().mockResolvedValue(undefined),
@@ -8,9 +8,12 @@ const service = vi.hoisted(() => ({
   close: vi.fn().mockResolvedValue(undefined),
 }))
 vi.mock('../src/services/widgetService', () => ({ widgetService: service }))
+const createdAt = Date.UTC(2026, 9, 25, 2, 30)
 
 beforeEach(() => {
   vi.resetAllMocks()
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(createdAt)
   service.isDesktop.mockReturnValue(true)
   service.reveal.mockResolvedValue(undefined)
   service.saveTodos.mockResolvedValue(undefined)
@@ -18,6 +21,7 @@ beforeEach(() => {
   service.close.mockResolvedValue(undefined)
   service.load.mockResolvedValue({ todos: [], settings: { ...DEFAULT_SETTINGS } })
 })
+afterEach(() => { vi.useRealTimers() })
 
 describe('local task state', () => {
   it('restores the saved order, completion, text and settings', async () => {
@@ -38,18 +42,18 @@ describe('local task state', () => {
     const first = widget.todos.value[0].id
     const second = widget.todos.value[1].id
     widget.edit(first, '修改后的任务', 'p1')
-    widget.toggle(first)
     widget.moveBy(second, -1)
+    widget.toggle(first)
     await widget.flush()
     expect(service.saveTodos).toHaveBeenLastCalledWith([
-      { id: second, text: '第二件事', completed: false, priority: 'p3' },
-      { id: first, text: '修改后的任务', completed: true, priority: 'p1' },
+      { id: second, text: '第二件事', completed: false, priority: 'p3', createdAt },
+      { id: first, text: '修改后的任务', completed: true, priority: 'p1', createdAt },
     ])
-    expect(service.saveTodos.mock.calls[0][0]).toEqual([{ id: first, text: '第一件事', completed: false, priority: 'p0' }])
+    expect(service.saveTodos.mock.calls[0][0]).toEqual([{ id: first, text: '第一件事', completed: false, priority: 'p0', createdAt }])
     widget.remove(first)
     await widget.flush()
     expect(widget.remaining.value).toBe(1)
-    expect(service.saveTodos).toHaveBeenLastCalledWith([{ id: second, text: '第二件事', completed: false, priority: 'p3' }])
+    expect(service.saveTodos).toHaveBeenLastCalledWith([{ id: second, text: '第二件事', completed: false, priority: 'p3', createdAt }])
   })
 
   it('defaults new tasks to P2 and preserves priority when only text is edited', async () => {
@@ -61,7 +65,50 @@ describe('local task state', () => {
     widget.edit(id, '设为紧急', 'p0')
     widget.edit(id, '仅修改文字')
     await widget.flush()
-    expect(service.saveTodos).toHaveBeenLastCalledWith([{ id, text: '仅修改文字', completed: false, priority: 'p0' }])
+    expect(service.saveTodos).toHaveBeenLastCalledWith([{ id, text: '仅修改文字', completed: false, priority: 'p0', createdAt }])
+  })
+
+  it('orders only pending tasks when completed tasks are interleaved in the store', async () => {
+    service.load.mockResolvedValue({ todos: [
+      { id: 'one', text: '第一件', completed: false, priority: 'p0' },
+      { id: 'done', text: '已完成', completed: true, priority: 'p1' },
+      { id: 'two', text: '第二件', completed: false, priority: 'p2' },
+      { id: 'three', text: '第三件', completed: false, priority: 'p3' },
+    ], settings: { ...DEFAULT_SETTINGS } })
+    const widget = useWidget()
+    await widget.initialize()
+    widget.moveBy('two', -1)
+    await widget.flush()
+    expect(widget.todos.value.filter((todo) => !todo.completed).map((todo) => todo.id)).toEqual(['two', 'one', 'three'])
+    widget.moveBy('two', -1)
+    widget.move('two', 'done')
+    widget.moveBy('done', 1)
+    await widget.flush()
+    expect(service.saveTodos).toHaveBeenCalledTimes(1)
+    widget.toggle('done')
+    await widget.flush()
+    expect(widget.todos.value.map((todo) => todo.id)).toEqual(['two', 'one', 'done', 'three'])
+    expect(widget.remaining.value).toBe(4)
+    expect(widget.todos.value[2].priority).toBe('p1')
+  })
+
+  it('records creation time once and preserves it through edits, completion, restore and sorting', async () => {
+    const widget = useWidget()
+    await widget.initialize()
+    widget.add('记录添加时间', 'p1')
+    const id = widget.todos.value[0].id
+    expect(widget.todos.value[0].createdAt).toBe(createdAt)
+    vi.setSystemTime(createdAt + 60_000)
+    widget.add('一分钟后添加')
+    expect(widget.todos.value[1].createdAt).toBe(createdAt + 60_000)
+    widget.edit(id, '修改内容', 'p0')
+    widget.toggle(id)
+    widget.toggle(id)
+    widget.moveBy(id, 1)
+    await widget.flush()
+    expect(service.saveTodos.mock.lastCall?.[0].find((todo: Todo) => todo.id === id)).toEqual({
+      id, text: '修改内容', completed: false, priority: 'p0', createdAt,
+    })
   })
 
   it('rejects blank tasks and empty edits without writing', async () => {

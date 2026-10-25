@@ -10,6 +10,7 @@ export interface Todo {
   text: string
   completed: boolean
   priority: Priority
+  createdAt?: number | null
 }
 
 export interface Settings {

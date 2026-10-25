@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { Check, GripVertical, Pencil, Trash2, X } from '@lucide/vue'
 import { DEFAULT_PRIORITY, MAX_TODO_LENGTH, PRIORITY_LABELS, type Priority, type Todo } from '../types'
 import PrioritySelect from './PrioritySelect.vue'
@@ -10,11 +10,32 @@ const emit = defineEmits<{
   drag: [id: string, event: DragEvent]; dragEnd: []; move: [id: string, offset: -1 | 1]
 }>()
 const editing = ref(false)
+const confirmingDelete = ref(false)
 const draft = ref('')
 const draftPriority = ref<Priority>(DEFAULT_PRIORITY)
 const input = ref<HTMLTextAreaElement>()
 const editButton = ref<HTMLButtonElement>()
+const deleteButton = ref<HTMLButtonElement>()
+const cancelDeleteButton = ref<HTMLButtonElement>()
 const invalid = ref(false)
+const createdDate = computed(() => props.todo.createdAt == null ? undefined : new Date(props.todo.createdAt))
+const createdTime = computed(() => createdDate.value?.toLocaleString('zh-CN', {
+  month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+}))
+const fullCreatedTime = computed(() => createdDate.value?.toLocaleString('zh-CN', { hourCycle: 'h23' }))
+
+async function requestRemove() {
+  if (!props.todo.completed) { emit('remove', props.todo.id); return }
+  confirmingDelete.value = true
+  await nextTick()
+  cancelDeleteButton.value?.focus()
+}
+
+async function cancelRemove() {
+  confirmingDelete.value = false
+  await nextTick()
+  deleteButton.value?.focus()
+}
 
 async function beginEdit() {
   draft.value = props.todo.text
@@ -43,22 +64,35 @@ function editKey(event: KeyboardEvent) {
 
 <template>
   <li class="todo-item" :class="{ completed: todo.completed, dragging, editing }" :data-id="todo.id">
-    <template v-if="!editing">
-      <button class="sort-handle" draggable="true" :aria-label="`排序：${todo.text}，按 Alt 加上或下方向键移动`"
+    <div v-if="confirmingDelete" class="delete-confirmation" role="group" :aria-labelledby="`delete-label-${todo.id}`" @keydown.esc.prevent.stop="cancelRemove">
+      <span class="todo-text">{{ todo.text }}</span>
+      <p :id="`delete-label-${todo.id}`">永久删除这条已完成任务？删除后无法恢复。</p>
+      <div class="delete-actions">
+        <button ref="cancelDeleteButton" class="secondary-button" @click="cancelRemove">取消</button>
+        <button class="secondary-button danger-button" aria-label="确认永久删除" @click="$emit('remove', todo.id)">永久删除</button>
+      </div>
+    </div>
+    <template v-else-if="!editing">
+      <button v-if="!todo.completed" class="sort-handle" draggable="true" :aria-label="`排序：${todo.text}，按 Alt 加上或下方向键移动`"
         title="拖动排序 · Alt + ↑ / ↓" @dragstart="$emit('drag', todo.id, $event)" @dragend="$emit('dragEnd')"
         @keydown.alt.up.prevent="!first && $emit('move', todo.id, -1)"
         @keydown.alt.down.prevent="!last && $emit('move', todo.id, 1)"><GripVertical :size="14" /></button>
-      <label class="todo-check"><input type="checkbox" :checked="todo.completed" :aria-label="`完成：${todo.text}`"
+      <label class="todo-check"><input type="checkbox" :checked="todo.completed" :aria-label="`${todo.completed ? '恢复' : '完成'}：${todo.text}`"
           @change="$emit('toggle', todo.id)" /><span class="check-mark"><Check v-if="todo.completed" :size="12" /></span></label>
       <div class="todo-content">
         <span class="todo-text" :title="todo.text" @dblclick="beginEdit">{{ todo.text }}</span>
-        <span class="priority-badge" :class="`priority-${todo.priority}`" :data-priority="todo.priority"
-          :title="`优先级：${todo.priority.toUpperCase()} ${PRIORITY_LABELS[todo.priority]}`">{{ todo.priority.toUpperCase() }} · {{ PRIORITY_LABELS[todo.priority] }}</span>
+        <div class="todo-meta">
+          <span class="priority-badge" :class="`priority-${todo.priority}`" :data-priority="todo.priority"
+            :title="`优先级：${todo.priority.toUpperCase()} ${PRIORITY_LABELS[todo.priority]}`">{{ todo.priority.toUpperCase() }} · {{ PRIORITY_LABELS[todo.priority] }}</span>
+          <time v-if="createdDate" class="todo-created" :datetime="createdDate.toISOString()" :title="`添加于 ${fullCreatedTime}`">添加于 {{ createdTime }}</time>
+          <span v-else class="todo-created">添加时间未知</span>
+        </div>
       </div>
       <div class="todo-actions">
         <button ref="editButton" class="row-button" :aria-label="`编辑：${todo.text}`" title="编辑（也可双击文字）"
           @click="beginEdit"><Pencil :size="14" /></button>
-        <button class="row-button danger-button" :aria-label="`删除：${todo.text}`" title="删除" @click="$emit('remove', todo.id)"><Trash2 :size="14" /></button>
+        <button ref="deleteButton" class="row-button danger-button" :aria-label="`${todo.completed ? '永久删除' : '删除'}：${todo.text}`"
+          :title="todo.completed ? '永久删除' : '删除'" @click="requestRemove"><Trash2 :size="14" /></button>
       </div>
     </template>
     <div v-else class="edit-form">
