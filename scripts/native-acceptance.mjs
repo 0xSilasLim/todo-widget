@@ -93,6 +93,18 @@ try {
   expect(report.initialWindow.topmost).toBe(true)
   report.checks.push('First launch: 320×420 DIP, primary work area, 16 DIP inset, no frame, normal taskbar window')
 
+  await page.locator('#new-todo').click()
+  report.composerFocus = await page.locator('#new-todo').evaluate((input) => {
+    const style = getComputedStyle(input), rect = input.getBoundingClientRect()
+    const clip = input.closest('.composer').getBoundingClientRect()
+    const extent = parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset)
+    return { visible: input.matches(':focus-visible'), left: rect.left - extent >= clip.left - .5,
+      right: rect.right + extent <= clip.right + .5, top: rect.top - extent >= clip.top - .5,
+      bottom: rect.bottom + extent <= clip.bottom + .5 }
+  })
+  expect(Object.values(report.composerFocus).every(Boolean)).toBe(true)
+  report.checks.push('New-task input focus outline fits all four edges of its scrolling container')
+
   for (const text of ['整理今天的重点', '完成窗口验收', '待删除的验收任务']) {
     await page.getByLabel('新增待办', { exact: true }).fill(text)
     await page.getByRole('button', { name: '添加待办', exact: true }).click()

@@ -102,7 +102,7 @@ textarea { width: 100%; min-height: 68px; resize: vertical; border: 1px solid va
 .empty-state svg { color: var(--color-accent); background: var(--color-surface); border-radius: var(--radius-small); }
 .empty-state p { font-weight: 600; margin: var(--space-4) 0 var(--space-2); background: var(--color-surface); border-radius: var(--radius-small); }
 .empty-state span { font-size: 12px; line-height: 1.6; color: var(--color-muted); background: var(--color-surface); border-radius: var(--radius-small); }
-.composer { display: flex; flex-direction: column; flex-shrink: 0; min-height: 0; max-height: min(55%, calc(100% - 184px)); overflow-y: auto; overflow-x: clip; gap: var(--space-1); margin: var(--space-2) var(--space-3) 0; scrollbar-width: thin; }
+.composer { display: flex; flex-direction: column; flex-shrink: 0; min-height: 0; max-height: min(55%, calc(100% - 184px)); overflow-y: auto; overflow-x: clip; gap: var(--space-1); padding: var(--space-1); margin: var(--space-1) var(--space-2) 0; scrollbar-width: thin; }
 .composer-inputs { display: flex; min-width: 0; flex-shrink: 0; gap: var(--space-2); }
 .composer input { width: 0; flex: 1; min-width: 0; height: 40px; border: 1px solid var(--color-border); border-radius: var(--radius-small); padding: 0 var(--space-3); color: var(--color-text); background: var(--color-raised); user-select: text; }
 .composer .priority-select { height: 40px; }
