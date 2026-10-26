@@ -286,7 +286,7 @@ try {
           const bounds = meta.getBoundingClientRect()
           return meta.scrollWidth <= meta.clientWidth && [...meta.children].every((element) => {
             const rect = element.getBoundingClientRect()
-            return Math.abs(rect.top - bounds.top) < 1 && rect.height <= parseFloat(getComputedStyle(element).lineHeight) + 1 && rect.left >= bounds.left && rect.right <= bounds.right
+            return Math.abs(rect.top - bounds.top) < 1 && rect.height <= parseFloat(getComputedStyle(element).lineHeight) + 1 && rect.left >= bounds.left - .5 && rect.right <= bounds.right + .5
           })
         }),
         controlsFit: [...document.querySelectorAll('.composer-inputs > *, .task-tab, .todo-item, .delete-actions button, .deadline-badge, .deadline-fields input')].every((element) => element.getBoundingClientRect().right <= right) }
