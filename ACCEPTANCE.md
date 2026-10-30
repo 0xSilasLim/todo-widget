@@ -160,3 +160,9 @@ Tao 为 Windows 系统动画保留了 `WS_CAPTION` 样式位，同时通过非�
 - 前端 35 / 35、Rust 23 / 23、Clippy、TypeScript、生产页面与 Debug 原生构建通过。真实 Tauri / WebView2 验收验证提醒新增 / 编辑 / 取消 / 清除、过去时间校验、无 DDL 且关闭自动 DDL 提醒时的最小化触发、多个完整进程重启、发送记录去重、完成后抑制、恢复后补发及指定提醒优先级；没有 JavaScript 错误。
 - 280、320、375 CSS 像素宽度下，原三字段信息栏保持单行，新提醒编辑器和新增选项无横向溢出。320 像素最小高度下页签与新增区不重叠、状态栏完整；原焦点框、透明背景、右上角定位、置顶、锁定、任务分类 / 排序及权限拒绝回归通过。没有增加 capability 或直接通知权限。
 - 原生报告：`artifacts/native-1793330646187/report.json`，其中 `customReminderWhileMinimized=true`。截图来自隔离的合成清单：[指定提醒](docs/images/reminders.png)。验收确认原生通知请求与持久化记录，未声称所有 Windows 通知 / 勿扰配置下的横幅都可见；安装 / 卸载、真实休眠唤醒和混合 DPI 多屏硬件未新增实机检查。
+
+## v0.5.1 提醒提示音（2026-10-30）
+
+- 自定义时间提醒与 DDL 自动提醒共用的 Rust 通知入口明确指定 `sound("IM")`，使用 Windows 短消息提示音。核对现有通知依赖，未指定声音时会生成静音通知；`IM` 对应 `ms-winsoundevent:Notification.IM`，不使用循环声音或闹钟场景。没有新增依赖、前端权限或设置。
+- 前端 35 / 35、Rust 23 / 23、Clippy `-D warnings`、Rust 格式、TypeScript、生产页面及 Debug 原生构建通过。真实 Tauri / WebView2 回归报告：`artifacts/native-1793367586518/report.json`，无 JS 错误；自定义时间和 DDL 提醒均在最小化时提交，重启去重、完成后抑制与恢复补发继续通过，透明、定位、置顶、锁定及布局回归通过。
+- 当前测试环境的 Windows 通知 API 对调试来源和应用标识均返回 `DisabledForUser`。未更改用户系统通知设置，未确认扬声器实际播放或横幅显示；声音参数与调度检查不等同于实际听感验收。播放仍受 Windows 通知声音开关、音量及勿扰状态影响。

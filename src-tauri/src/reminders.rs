@@ -105,6 +105,8 @@ fn submit<T: Clone + Serialize>(
         .builder()
         .title(message.0)
         .body(message.1)
+        // Windows' short message chime plays once, without looping.
+        .sound("IM")
         .show()
     {
         match previous_record {
