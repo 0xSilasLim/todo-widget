@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { Check, Clock, GripVertical, Pencil, Trash2, X } from '@lucide/vue'
+import { Bell, BellRing, Check, Clock, GripVertical, Pencil, Trash2, X } from '@lucide/vue'
 import { DEFAULT_PRIORITY, MAX_TODO_LENGTH, PRIORITY_LABELS, type Priority, type Todo } from '../types'
 import PrioritySelect from './PrioritySelect.vue'
 import DeadlineEditor from './DeadlineEditor.vue'
+import ReminderEditor from './ReminderEditor.vue'
 import { deadlineStatus } from '../services/deadlines'
+import { reminderStatus } from '../services/reminders'
 
 const props = defineProps<{ todo: Todo; first: boolean; last: boolean; dragging: boolean; now?: number }>()
 const emit = defineEmits<{
-  toggle: [id: string]; edit: [id: string, text: string, priority: Priority, dueAt: number | null]; remove: [id: string]
+  toggle: [id: string]; edit: [id: string, text: string, priority: Priority, dueAt: number | null, remindAt: number | null]; remove: [id: string]
   drag: [id: string, event: DragEvent]; dragEnd: []; move: [id: string, offset: -1 | 1]
 }>()
 const editing = ref(false)
@@ -18,6 +20,10 @@ const draftPriority = ref<Priority>(DEFAULT_PRIORITY)
 const draftDeadline = ref<number | null>(null)
 const deadlineValid = ref(true)
 const deadlineEditor = ref<InstanceType<typeof DeadlineEditor>>()
+const draftReminder = ref<number | null>(null)
+const reminderValid = ref(true)
+const reminderEditor = ref<InstanceType<typeof ReminderEditor>>()
+const reminderDetails = computed(() => props.todo.remindAt == null ? '设置提醒日期和时间' : reminderStatus(props.todo.remindAt, props.now ?? Date.now(), props.todo.completed).description)
 const deadline = computed(() => props.todo.dueAt == null ? undefined : deadlineStatus(props.todo.dueAt, props.now ?? Date.now(), props.todo.completed))
 const deadlineDetails = computed(() => deadline.value ? `截止于 ${deadline.value.fullLabel}；${deadline.value.remaining}；点击修改` : '设置截止日期和时间')
 const input = ref<HTMLTextAreaElement>()
@@ -44,22 +50,25 @@ async function cancelRemove() {
   deleteButton.value?.focus()
 }
 
-async function beginEdit(focusDeadline = false) {
+async function beginEdit(focusField: 'text' | 'deadline' | 'reminder' = 'text') {
   draft.value = props.todo.text
   draftPriority.value = props.todo.priority
   draftDeadline.value = props.todo.dueAt ?? null
   deadlineValid.value = true
+  draftReminder.value = props.todo.remindAt ?? null
+  reminderValid.value = true
   editing.value = true
   invalid.value = false
   await nextTick()
-  if (focusDeadline) deadlineEditor.value?.focus()
+  if (focusField === 'deadline') deadlineEditor.value?.focus()
+  else if (focusField === 'reminder') reminderEditor.value?.focus()
   else { input.value?.focus(); input.value?.select() }
 }
 
 async function finish(save: boolean) {
   if (save && !draft.value.trim()) { invalid.value = true; return }
-  if (save && !deadlineValid.value) return
-  if (save) emit('edit', props.todo.id, draft.value, draftPriority.value, draftDeadline.value)
+  if (save && (!deadlineValid.value || !reminderEditor.value?.validate())) return
+  if (save) emit('edit', props.todo.id, draft.value, draftPriority.value, draftDeadline.value, draftReminder.value)
   editing.value = false
   await nextTick()
   editButton.value?.focus()
@@ -93,6 +102,8 @@ function editKey(event: KeyboardEvent) {
         <span class="todo-text" :title="todo.text" @dblclick="beginEdit()">{{ todo.text }}</span>
       </div>
       <div class="todo-actions">
+        <button class="row-button" :class="{ selected: todo.remindAt != null && !todo.completed }" :aria-label="`设置提醒：${todo.text}`"
+          :aria-description="reminderDetails" :title="reminderDetails" @click="beginEdit('reminder')"><BellRing v-if="todo.remindAt != null" :size="14" /><Bell v-else :size="14" /></button>
         <button ref="editButton" class="row-button" :aria-label="`编辑：${todo.text}`" title="编辑（也可双击文字）"
           @click="beginEdit()"><Pencil :size="14" /></button>
         <button ref="deleteButton" class="row-button danger-button" :aria-label="`${todo.completed ? '永久删除' : '删除'}：${todo.text}`"
@@ -105,7 +116,7 @@ function editKey(event: KeyboardEvent) {
         <time v-if="createdDate" class="todo-created" :datetime="createdDate.toISOString()" :title="`添加于 ${fullCreatedTime}`" :aria-label="`添加于 ${fullCreatedTime}`"><Clock :size="14" aria-hidden="true" />{{ createdTime }}</time>
         <span v-else class="todo-created">添加时间未知</span>
         <button class="deadline-badge" :class="`deadline-${deadline?.tone ?? 'neutral'}`" :aria-label="`设置截止时间：${todo.text}`"
-          :aria-description="deadlineDetails" :title="deadlineDetails" @click="beginEdit(true)">
+          :aria-description="deadlineDetails" :title="deadlineDetails" @click="beginEdit('deadline')">
           <span v-if="deadline">{{ deadline.tone === 'overdue' ? '逾期' : 'DDL' }} {{ deadline.label }}</span>
           <span v-else>设置 DDL</span>
         </button>
@@ -118,9 +129,11 @@ function editKey(event: KeyboardEvent) {
       <span v-if="invalid" :id="`error-${todo.id}`" class="field-error" role="alert">请填写待办内容</span>
       <label class="edit-priority">优先级 <PrioritySelect v-model="draftPriority" label="编辑待办优先级" /><span class="hint">P0 最高 · P3 最低</span></label>
       <DeadlineEditor ref="deadlineEditor" v-model="draftDeadline" :id-prefix="`deadline-${todo.id}`" @validity="deadlineValid = $event" />
+      <ReminderEditor ref="reminderEditor" v-model="draftReminder" :id-prefix="`reminder-${todo.id}`" @validity="reminderValid = $event" />
+      <p v-if="todo.completed && draftReminder != null" class="hint">已完成的任务不会提醒；恢复后按设置的时间处理。</p>
       <div class="edit-actions"><span class="hint">Enter 保存 · Esc 取消</span>
         <button class="row-button" aria-label="取消编辑" title="取消编辑" @click="finish(false)"><X :size="16" /></button>
-        <button class="row-button selected" aria-label="保存编辑" title="保存编辑" :disabled="!deadlineValid" @click="finish(true)"><Check :size="16" /></button>
+        <button class="row-button selected" aria-label="保存编辑" title="保存编辑" :disabled="!deadlineValid || !reminderValid" @click="finish(true)"><Check :size="16" /></button>
       </div>
     </div>
   </li>

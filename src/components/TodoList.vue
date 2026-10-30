@@ -7,7 +7,7 @@ import { useClock } from '../composables/useClock'
 
 const props = defineProps<{ todos: Todo[] }>()
 const emit = defineEmits<{
-  toggle: [id: string]; edit: [id: string, text: string, priority: Priority, dueAt: number | null]; remove: [id: string]
+  toggle: [id: string]; edit: [id: string, text: string, priority: Priority, dueAt: number | null, remindAt: number | null]; remove: [id: string]
   reorder: [id: string, target: string]; move: [id: string, offset: -1 | 1]
 }>()
 const draggedId = ref('')
@@ -112,7 +112,7 @@ function move(id: string, offset: -1 | 1) {
       <ol v-else class="todo-list" :aria-label="activeTab === 'pending' ? '待办列表' : '已完成任务列表'">
         <TodoItem v-for="(todo, index) in visibleTodos" :key="todo.id" :todo="todo" :now="now" :first="index === 0"
           :last="index === visibleTodos.length - 1" :dragging="draggedId === todo.id" :class="{ 'drop-target': dropId === todo.id }"
-          @toggle="toggle" @edit="(id, text, priority, dueAt) => $emit('edit', id, text, priority, dueAt)" @remove="remove"
+          @toggle="toggle" @edit="(id, text, priority, dueAt, remindAt) => $emit('edit', id, text, priority, dueAt, remindAt)" @remove="remove"
           @drag="startDrag" @drag-end="endDrag" @move="move" @dragover.prevent="!todo.completed && (dropId = todo.id)" @drop.prevent="!todo.completed && drop(todo.id)" />
       </ol>
     </div>

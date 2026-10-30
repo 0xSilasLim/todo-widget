@@ -17,6 +17,30 @@ pub(crate) struct ReminderRecord {
     stage: u8,
 }
 pub(crate) type Records = HashMap<String, ReminderRecord>;
+pub(crate) type ScheduledRecords = HashMap<String, u64>;
+
+pub(crate) fn load_scheduled(store: &Store<tauri::Wry>) -> Result<ScheduledRecords, String> {
+    match store.get("taskReminders") {
+        Some(value) => {
+            serde_json::from_value(value).map_err(|error| format!("任务提醒记录格式有误：{error}"))
+        }
+        None => Ok(ScheduledRecords::new()),
+    }
+}
+
+pub(crate) fn retain_scheduled(records: &mut ScheduledRecords, todos: &[Todo]) {
+    records.retain(|id, timestamp| {
+        todos
+            .iter()
+            .any(|todo| &todo.id == id && todo.remind_at == Some(*timestamp))
+    });
+}
+
+fn pending_reminder(todo: &Todo, now: u64, records: &ScheduledRecords) -> Option<u64> {
+    let timestamp = todo.remind_at?;
+    (!todo.completed && now >= timestamp && records.get(&todo.id) != Some(&timestamp))
+        .then_some(timestamp)
+}
 
 pub(crate) fn load_records(store: &Store<tauri::Wry>) -> Result<Records, String> {
     match store.get("deadlineReminders") {
@@ -36,7 +60,7 @@ pub(crate) fn retain_current(records: &mut Records, todos: &[Todo]) {
 }
 
 fn pending_stage(todo: &Todo, now: u64, records: &Records) -> Option<ReminderRecord> {
-    if todo.completed {
+    if todo.completed || todo.remind_at.is_some() {
         return None;
     }
     let due_at = todo.due_at?;
@@ -56,19 +80,76 @@ fn pending_stage(todo: &Todo, now: u64, records: &Records) -> Option<ReminderRec
     Some(ReminderRecord { due_at, stage })
 }
 
+fn submit<T: Clone + Serialize>(
+    app: &AppHandle,
+    state: &WidgetState,
+    key: &str,
+    records: &mut HashMap<String, T>,
+    id: &str,
+    record: T,
+    message: (&str, String),
+) -> Result<(), String> {
+    // Persist submission before notifying Windows, so restarts do not repeat it.
+    let previous = state.store.get(key);
+    let previous_record = records.insert(id.into(), record);
+    state.store.set(
+        key,
+        serde_json::to_value(&records).map_err(|error| error.to_string())?,
+    );
+    if let Err(error) = state.store.save() {
+        restore_value(&state.store, key, previous);
+        return Err(error.to_string());
+    }
+    if let Err(error) = app
+        .notification()
+        .builder()
+        .title(message.0)
+        .body(message.1)
+        .show()
+    {
+        match previous_record {
+            Some(record) => {
+                records.insert(id.into(), record);
+            }
+            None => {
+                records.remove(id);
+            }
+        }
+        state.store.set(
+            key,
+            serde_json::to_value(&records).map_err(|error| error.to_string())?,
+        );
+        state.store.save().map_err(|error| error.to_string())?;
+        return Err(error.to_string());
+    }
+    Ok(())
+}
+
 fn check(app: &AppHandle) -> Result<(), String> {
     let state = app.state::<WidgetState>();
     let _guard = state.write_lock.lock().map_err(|error| error.to_string())?;
     let data = state.load()?;
-    if !data.settings.deadline_notifications {
-        return Ok(());
-    }
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|error| error.to_string())?
         .as_millis() as u64;
     let mut records = load_records(&state.store)?;
+    let mut scheduled = load_scheduled(&state.store)?;
     for todo in data.todos {
+        if let Some(timestamp) = pending_reminder(&todo, now, &scheduled) {
+            submit(
+                app,
+                &state,
+                "taskReminders",
+                &mut scheduled,
+                &todo.id,
+                timestamp,
+                ("任务提醒", format!("{}\n已到你设置的提醒时间。", todo.text)),
+            )?;
+        }
+        if !data.settings.deadline_notifications {
+            continue;
+        }
         let Some(record) = pending_stage(&todo, now, &records) else {
             continue;
         };
@@ -82,34 +163,15 @@ fn check(app: &AppHandle) -> Result<(), String> {
         } else {
             format!("{}\n已到截止时间，请尽快处理。", todo.text)
         };
-        // Persist before submitting to the OS: restarting must not repeat a toast.
-        // This records submission, not whether Windows displayed a banner.
-        let previous = state.store.get("deadlineReminders");
-        let previous_record = records.insert(todo.id.clone(), record);
-        state.store.set(
+        submit(
+            app,
+            &state,
             "deadlineReminders",
-            serde_json::to_value(&records).map_err(|error| error.to_string())?,
-        );
-        if let Err(error) = state.store.save() {
-            restore_value(&state.store, "deadlineReminders", previous);
-            return Err(error.to_string());
-        }
-        if let Err(error) = app.notification().builder().title(title).body(body).show() {
-            match previous_record {
-                Some(previous_record) => {
-                    records.insert(todo.id, previous_record);
-                }
-                None => {
-                    records.remove(&todo.id);
-                }
-            }
-            state.store.set(
-                "deadlineReminders",
-                serde_json::to_value(&records).map_err(|error| error.to_string())?,
-            );
-            state.store.save().map_err(|error| error.to_string())?;
-            return Err(error.to_string());
-        }
+            &mut records,
+            &todo.id,
+            record,
+            (title, body),
+        )?;
     }
     Ok(())
 }
@@ -219,5 +281,56 @@ mod tests {
         retain_current(&mut records, &[todo(Some(HOUR), true)]);
         assert_eq!(records.len(), 1);
         assert!(pending_stage(&todo(Some(HOUR * 2), false), HOUR, &records).is_some());
+    }
+
+    #[test]
+    fn a_custom_time_is_independent_of_ddl_and_suppresses_automatic_ddl_alerts() {
+        let mut task = todo(Some(HOUR), false);
+        task.remind_at = Some(HOUR / 2);
+        assert_eq!(
+            pending_reminder(&task, HOUR / 2 - 1, &ScheduledRecords::new()),
+            None
+        );
+        assert_eq!(
+            pending_reminder(&task, HOUR / 2, &ScheduledRecords::new()),
+            Some(HOUR / 2)
+        );
+        assert_eq!(pending_stage(&task, HOUR * 2, &Records::new()), None);
+        task.due_at = None;
+        assert_eq!(
+            pending_reminder(&task, HOUR, &ScheduledRecords::new()),
+            Some(HOUR / 2)
+        );
+        task.completed = true;
+        assert_eq!(
+            pending_reminder(&task, HOUR, &ScheduledRecords::new()),
+            None
+        );
+    }
+
+    #[test]
+    fn custom_submission_survives_restart_and_task_restore_without_repeating() {
+        let mut task = todo(None, false);
+        task.remind_at = Some(HOUR);
+        let records = HashMap::from([("one".into(), HOUR)]);
+        let mut restored: ScheduledRecords =
+            serde_json::from_str(&serde_json::to_string(&records).unwrap()).unwrap();
+        for now in [0, HOUR, HOUR * 3] {
+            assert_eq!(pending_reminder(&task, now, &restored), None);
+        }
+        task.completed = true;
+        retain_scheduled(&mut restored, &[task.clone()]);
+        assert_eq!(restored, records);
+        task.completed = false;
+        assert_eq!(pending_reminder(&task, HOUR * 2, &restored), None);
+        task.remind_at = Some(HOUR * 2);
+        retain_scheduled(&mut restored, &[task.clone()]);
+        assert!(restored.is_empty());
+        assert_eq!(pending_reminder(&task, HOUR * 3, &restored), Some(HOUR * 2));
+        for tasks in [vec![todo(None, false)], vec![]] {
+            let mut current = records.clone();
+            retain_scheduled(&mut current, &tasks);
+            assert!(current.is_empty());
+        }
     }
 }

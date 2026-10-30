@@ -12,6 +12,7 @@ export interface Todo {
   priority: Priority
   createdAt?: number | null
   dueAt?: number | null
+  remindAt?: number | null
 }
 
 export interface Settings {

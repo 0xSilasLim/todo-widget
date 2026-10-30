@@ -24,6 +24,27 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers() })
 
 describe('local task state', () => {
+  it('restores, edits and clears a reminder independently from the deadline and keeps it through task changes', async () => {
+    const remindAt = createdAt + 60_000, dueAt = createdAt + 3_600_000
+    service.load.mockResolvedValue({ todos: [{ id: 'saved', text: '已保存的提醒', completed: false, priority: 'p0', createdAt, dueAt, remindAt }], settings: { ...DEFAULT_SETTINGS } })
+    const widget = useWidget()
+    await widget.initialize()
+    expect(widget.todos.value[0].remindAt).toBe(remindAt)
+    widget.edit('saved', '只改文字')
+    widget.toggle('saved')
+    widget.toggle('saved')
+    widget.add('无 DDL 的提醒', 'p2', null, remindAt + 60_000)
+    widget.moveBy('saved', 1)
+    await widget.flush()
+    expect(widget.todos.value.find(todo => todo.id === 'saved')).toMatchObject({ createdAt, dueAt, remindAt })
+    expect(widget.todos.value.find(todo => todo.text === '无 DDL 的提醒')).toMatchObject({ remindAt: remindAt + 60_000 })
+    widget.edit('saved', '改提醒', undefined, undefined, remindAt + 120_000)
+    await widget.flush()
+    expect(widget.todos.value.find(todo => todo.id === 'saved')).toMatchObject({ dueAt, remindAt: remindAt + 120_000 })
+    widget.edit('saved', '清除提醒', undefined, undefined, null)
+    await widget.flush()
+    expect(service.saveTodos.mock.lastCall?.[0].find((todo: Todo) => todo.id === 'saved')).toMatchObject({ dueAt, remindAt: null })
+  })
   it('restores the saved order, completion, text and settings', async () => {
     service.load.mockResolvedValue({ todos: [{ id: 'one', text: '已保存', completed: true, priority: 'p1' }], settings: { ...DEFAULT_SETTINGS, locked: true, backgroundOpacity: 0.2 } })
     const widget = useWidget()

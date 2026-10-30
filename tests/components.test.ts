@@ -10,7 +10,7 @@ describe('widget controls', () => {
     const composer = mount(TodoComposer, { props: { disabled: false } })
     await composer.get('input').setValue('买牛奶')
     await composer.get('form').trigger('submit')
-    expect(composer.emitted('add')).toEqual([['买牛奶', 'p2', null]])
+    expect(composer.emitted('add')).toEqual([['买牛奶', 'p2', null, null]])
     expect((composer.get('input').element as HTMLInputElement).value).toBe('')
     await composer.get('form').trigger('submit')
     expect(composer.emitted('add')).toHaveLength(1)
@@ -23,7 +23,7 @@ describe('widget controls', () => {
     await item.get('textarea').trigger('keydown', { key: 'Enter', isComposing: true })
     expect(item.emitted('edit')).toBeUndefined()
     await item.get('textarea').trigger('keydown', { key: 'Enter', isComposing: false })
-    expect(item.emitted('edit')).toEqual([['one', '修改', 'p2', null]])
+    expect(item.emitted('edit')).toEqual([['one', '修改', 'p2', null, null]])
   })
 
   it('offers keyboard ordering and cancels an edit with Escape', async () => {
@@ -46,7 +46,7 @@ describe('widget controls', () => {
     await composer.get('select').setValue('p0')
     await composer.get('input').setValue('紧急任务')
     await composer.get('form').trigger('submit')
-    expect(composer.emitted('add')).toEqual([['紧急任务', 'p0', null]])
+    expect(composer.emitted('add')).toEqual([['紧急任务', 'p0', null, null]])
     expect(composer.get('select').element.value).toBe('p2')
     await composer.setProps({ disabled: true })
     expect(composer.get('select').attributes('disabled')).toBeDefined()
@@ -59,7 +59,7 @@ describe('widget controls', () => {
     await item.get('select').setValue('p1')
     expect(item.emitted('edit')).toBeUndefined()
     await item.get('[aria-label="保存编辑"]').trigger('click')
-    expect(item.emitted('edit')).toEqual([['one', '任务', 'p1', null]])
+    expect(item.emitted('edit')).toEqual([['one', '任务', 'p1', null, null]])
   })
 
   it('shows local creation time with the full timestamp available and labels legacy tasks honestly', () => {

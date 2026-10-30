@@ -28,6 +28,8 @@ pub struct Todo {
     pub created_at: Option<u64>,
     #[serde(default, rename = "dueAt", skip_serializing_if = "Option::is_none")]
     pub due_at: Option<u64>,
+    #[serde(default, rename = "remindAt", skip_serializing_if = "Option::is_none")]
+    pub remind_at: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -88,6 +90,9 @@ fn validate_todos(todos: &[Todo]) -> Result<(), String> {
                 .created_at
                 .is_some_and(|value| value > 8_640_000_000_000_000)
             || todo.due_at.is_some_and(|value| value > 253_402_300_799_999)
+            || todo
+                .remind_at
+                .is_some_and(|value| value > 253_402_300_799_999)
         {
             return Err("待办数据无效：内容需为 1–500 字，且标识不能重复".into());
         }
@@ -145,13 +150,20 @@ impl WidgetState {
         let _guard = self.write_lock.lock().map_err(|error| error.to_string())?;
         let previous = self.store.get("todos");
         let previous_reminders = self.store.get("deadlineReminders");
+        let previous_scheduled = self.store.get("taskReminders");
         let mut reminders = crate::reminders::load_records(&self.store)?;
+        let mut scheduled = crate::reminders::load_scheduled(&self.store)?;
         crate::reminders::retain_current(&mut reminders, &todos);
+        crate::reminders::retain_scheduled(&mut scheduled, &todos);
         self.store.set(
             "deadlineReminders",
             serde_json::to_value(reminders).map_err(|error| error.to_string())?,
         );
         self.store.set("schemaVersion", serde_json::json!(1));
+        self.store.set(
+            "taskReminders",
+            serde_json::to_value(scheduled).map_err(|error| error.to_string())?,
+        );
         self.store.set(
             "todos",
             serde_json::to_value(todos).map_err(|error| error.to_string())?,
@@ -159,6 +171,7 @@ impl WidgetState {
         if let Err(error) = self.store.save() {
             restore_value(&self.store, "todos", previous);
             restore_value(&self.store, "deadlineReminders", previous_reminders);
+            restore_value(&self.store, "taskReminders", previous_scheduled);
             return Err(error.to_string());
         }
         Ok(())
@@ -243,6 +256,7 @@ mod tests {
             priority: Priority::P2,
             created_at: None,
             due_at: None,
+            remind_at: None,
         };
         assert!(validate_todos(std::slice::from_ref(&valid)).is_ok());
         assert!(validate_todos(&[valid.clone(), valid]).is_err());
@@ -253,6 +267,7 @@ mod tests {
             priority: Priority::P2,
             created_at: None,
             due_at: None,
+            remind_at: None,
         }])
         .is_err());
     }
@@ -354,6 +369,34 @@ mod tests {
             .is_err());
         }
         let invalid: Todo = serde_json::from_value(serde_json::json!({"id":"one","text":"任务","completed":false,"dueAt":253_402_300_800_000_u64})).unwrap();
+        assert!(validate_todos(&[invalid]).is_err());
+    }
+
+    #[test]
+    fn custom_reminder_times_round_trip_without_requiring_a_deadline() {
+        let value = serde_json::json!({"id":"one", "text":"提醒任务", "completed":false,
+            "priority":"p1", "remindAt":1_792_924_800_123_u64});
+        let task: Todo = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(task.due_at, None);
+        assert_eq!(task.remind_at, Some(1_792_924_800_123));
+        assert!(validate_todos(std::slice::from_ref(&task)).is_ok());
+        assert_eq!(serde_json::to_value(task).unwrap(), value);
+        let old: Todo = serde_json::from_value(
+            serde_json::json!({"id":"old", "text":"旧任务", "completed":true}),
+        )
+        .unwrap();
+        assert_eq!(old.remind_at, None);
+        for value in [
+            serde_json::json!(-1),
+            serde_json::json!(1.5),
+            serde_json::json!("tomorrow"),
+        ] {
+            assert!(serde_json::from_value::<Todo>(
+                serde_json::json!({"id":"one", "text":"任务", "completed":false,"remindAt":value})
+            )
+            .is_err());
+        }
+        let invalid: Todo = serde_json::from_value(serde_json::json!({"id":"one", "text":"任务", "completed":false, "remindAt":253_402_300_800_000_u64})).unwrap();
         assert!(validate_todos(&[invalid]).is_err());
     }
 }
