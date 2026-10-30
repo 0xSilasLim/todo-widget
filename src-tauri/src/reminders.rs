@@ -5,7 +5,6 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_store::Store;
 
 const HOUR: u64 = 3_600_000;
@@ -81,15 +80,13 @@ fn pending_stage(todo: &Todo, now: u64, records: &Records) -> Option<ReminderRec
 }
 
 fn submit<T: Clone + Serialize>(
-    app: &AppHandle,
     state: &WidgetState,
     key: &str,
     records: &mut HashMap<String, T>,
     id: &str,
     record: T,
-    message: (&str, String),
 ) -> Result<(), String> {
-    // Persist submission before notifying Windows, so restarts do not repeat it.
+    // Persist before starting audio, so restarts do not repeat the reminder.
     let previous = state.store.get(key);
     let previous_record = records.insert(id.into(), record);
     state.store.set(
@@ -100,15 +97,7 @@ fn submit<T: Clone + Serialize>(
         restore_value(&state.store, key, previous);
         return Err(error.to_string());
     }
-    if let Err(error) = app
-        .notification()
-        .builder()
-        .title(message.0)
-        .body(message.1)
-        // Windows' short message chime plays once, without looping.
-        .sound("IM")
-        .show()
-    {
+    if let Err(error) = crate::sound::play() {
         match previous_record {
             Some(record) => {
                 records.insert(id.into(), record);
@@ -139,15 +128,7 @@ fn check(app: &AppHandle) -> Result<(), String> {
     let mut scheduled = load_scheduled(&state.store)?;
     for todo in data.todos {
         if let Some(timestamp) = pending_reminder(&todo, now, &scheduled) {
-            submit(
-                app,
-                &state,
-                "taskReminders",
-                &mut scheduled,
-                &todo.id,
-                timestamp,
-                ("任务提醒", format!("{}\n已到你设置的提醒时间。", todo.text)),
-            )?;
+            submit(&state, "taskReminders", &mut scheduled, &todo.id, timestamp)?;
         }
         if !data.settings.deadline_notifications {
             continue;
@@ -155,25 +136,7 @@ fn check(app: &AppHandle) -> Result<(), String> {
         let Some(record) = pending_stage(&todo, now, &records) else {
             continue;
         };
-        let title = if record.stage == 1 {
-            "DDL 提醒：任务即将截止"
-        } else {
-            "DDL 提醒：任务已到截止时间"
-        };
-        let body = if record.stage == 1 {
-            format!("{}\n距离截止不足 1 小时，请尽快完成。", todo.text)
-        } else {
-            format!("{}\n已到截止时间，请尽快处理。", todo.text)
-        };
-        submit(
-            app,
-            &state,
-            "deadlineReminders",
-            &mut records,
-            &todo.id,
-            record,
-            (title, body),
-        )?;
+        submit(&state, "deadlineReminders", &mut records, &todo.id, record)?;
     }
     Ok(())
 }

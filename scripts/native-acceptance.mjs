@@ -16,6 +16,7 @@ mkdirSync(profile, { recursive: true })
 const log = openSync(resolve(artifactDir, 'app.log'), 'a')
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const report = { artifactDir, checks: [], errors: [] }
+const audioStarts = () => (readFileSync(resolve(artifactDir, 'app.log'), 'utf8').match(/\[reminder-audio\] started/g) ?? []).length
 let child, browser, page
 
 function measure() {
@@ -395,7 +396,7 @@ try {
   report.checks.push('DDL add/edit/cancel/clear, date-only 23:59, all urgency levels, completion/restore, persisted timestamps, restart, and narrow editor layouts pass')
 
   // Native scheduler: an isolated, synthetic task with a real near-future DDL.
-  // Other fixture deadlines are cleared before enabling OS notifications.
+  // Other fixture deadlines are cleared before enabling automatic reminders.
   for (const text of [deadlineText, overdueText]) {
     await taskRow(text).locator('.deadline-badge').click()
     await page.getByRole('button', { name: '清除 DDL', exact: true }).click()
@@ -441,12 +442,14 @@ try {
   await page.evaluate(todos => window.__TAURI_INTERNALS__.invoke('save_todos', { todos }), customTodos)
   await page.getByRole('button', { name: '最小化', exact: true }).click()
   await expect.poll(() => readStore().taskReminders?.[customTask.id], { timeout: 35_000 }).toBe(firstCustomTime)
+  await expect.poll(audioStarts).toBe(1)
   report.customReminderWhileMinimized = measure().minimized
   expect(report.customReminderWhileMinimized).toBe(true)
   await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('reveal_widget'))
   await close()
   await launch()
   expect(readStore().taskReminders[customTask.id]).toBe(firstCustomTime)
+  expect(audioStarts()).toBe(1)
   await page.getByRole('checkbox', { name: `完成：${customText}`, exact: true }).click()
   await saveSettled()
   customTodos = readStore().todos
@@ -465,6 +468,7 @@ try {
   await page.getByRole('checkbox', { name: `恢复：${customText}`, exact: true }).click()
   await saveSettled()
   await expect.poll(() => readStore().taskReminders?.[customTask.id], { timeout: 25_000 }).toBe(rearmedCustomTime)
+  await expect.poll(audioStarts).toBe(2)
   expect(readStore().deadlineReminders[customTask.id]).toBeUndefined()
   await close()
   await launch()
@@ -494,6 +498,7 @@ try {
   await page.getByRole('button', { name: '返回清单', exact: true }).click()
   await page.getByRole('button', { name: '最小化', exact: true }).click()
   await expect.poll(() => readStore().deadlineReminders?.[reminderTask.id]?.stage, { timeout: 35_000 }).toBe(1)
+  await expect.poll(audioStarts).toBe(3)
   report.reminderWhileMinimized = measure().minimized
   expect(report.reminderWhileMinimized).toBe(true)
   await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('reveal_widget'))
@@ -501,6 +506,7 @@ try {
   await launch()
   expect(readStore().deadlineReminders[reminderTask.id]).toEqual({ dueAt: reminderTask.dueAt, stage: 1 })
   await expect.poll(() => readStore().deadlineReminders?.[reminderTask.id]?.stage, { timeout: 120_000 }).toBe(2)
+  await expect.poll(audioStarts).toBe(4)
   await close()
   await launch()
   expect(readStore().deadlineReminders[reminderTask.id]).toEqual({ dueAt: reminderTask.dueAt, stage: 2 })
@@ -514,6 +520,7 @@ try {
   expect(readStore().deadlineReminders[reminderTask.id]).toBeUndefined()
   await page.getByRole('checkbox', { name: `恢复：${reminderText}`, exact: true }).click()
   await expect.poll(() => readStore().deadlineReminders?.[reminderTask.id]?.stage, { timeout: 25_000 }).toBe(2)
+  await expect.poll(audioStarts).toBe(5)
   await showPending()
   await taskRow(reminderText).locator('.deadline-badge').click()
   await page.getByRole('button', { name: '清除 DDL', exact: true }).click()
@@ -524,7 +531,9 @@ try {
   await page.locator('#deadline-notifications').uncheck()
   await saveSettled()
   await page.getByRole('button', { name: '返回清单', exact: true }).click()
-  report.checks.push('Rust scheduler submits 1-hour/due reminders while minimized, persists deduplication through process restarts, skips completed tasks, rearms changed deadlines and stops after clear/disable; Windows banner delivery remains subject to OS settings')
+  report.audioStarts = audioStarts()
+  expect(report.audioStarts).toBe(5)
+  report.checks.push('Custom and automatic DDL reminders start app audio while minimized; exactly five expected chimes across restarts, completion, restore and rearming; no notification plugin or toast is used')
   // Use a compact synthetic fixture for shareable screenshots, never personal data.
   const screenshotNow = Date.now()
   await page.evaluate((now) => window.__TAURI_INTERNALS__.invoke('save_todos', { todos: [

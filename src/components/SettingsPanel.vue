@@ -29,7 +29,7 @@ function preview(event: Event) {
     <label class="setting-row" for="deadline-notifications"><span><strong>DDL 自动提醒</strong><small>未单独设置提醒的任务，在截止前 1 小时、到期时提醒</small></span>
       <input id="deadline-notifications" class="switch" type="checkbox" :checked="settings.deadlineNotifications"
         @change="$emit('update', { deadlineNotifications: ($event.target as HTMLInputElement).checked })" /></label>
-    <p class="hint">应用运行或最小化时提醒，完全退出后停止。Windows 勿扰模式可能隐藏通知横幅。</p>
+    <p class="hint">到时只响一声，不弹横幅，无需开启 Windows 通知。应用运行或最小化时提醒，退出后停止；静音时听不到。</p>
     <div class="opacity-setting"><label for="background-opacity">背景不透明度 <output for="background-opacity">{{ opacity }}%</output></label>
       <input id="background-opacity" type="range" min="20" max="100" step="1" :value="opacity" @input="preview"
         @change="$emit('update', { backgroundOpacity: opacity / 100 })" />

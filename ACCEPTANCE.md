@@ -166,3 +166,11 @@ Tao 为 Windows 系统动画保留了 `WS_CAPTION` 样式位，同时通过非�
 - 自定义时间提醒与 DDL 自动提醒共用的 Rust 通知入口明确指定 `sound("IM")`，使用 Windows 短消息提示音。核对现有通知依赖，未指定声音时会生成静音通知；`IM` 对应 `ms-winsoundevent:Notification.IM`，不使用循环声音或闹钟场景。没有新增依赖、前端权限或设置。
 - 前端 35 / 35、Rust 23 / 23、Clippy `-D warnings`、Rust 格式、TypeScript、生产页面及 Debug 原生构建通过。真实 Tauri / WebView2 回归报告：`artifacts/native-1793367586518/report.json`，无 JS 错误；自定义时间和 DDL 提醒均在最小化时提交，重启去重、完成后抑制与恢复补发继续通过，透明、定位、置顶、锁定及布局回归通过。
 - 当前测试环境的 Windows 通知 API 对调试来源和应用标识均返回 `DisabledForUser`。未更改用户系统通知设置，未确认扬声器实际播放或横幅显示；声音参数与调度检查不等同于实际听感验收。播放仍受 Windows 通知声音开关、音量及勿扰状态影响。
+
+## v0.6.0 独立声音提醒（2026-10-30）
+
+- 自定义时间与 DDL 自动提醒改用 Rust 调用 WinMM `PlaySoundW`，从静态内存异步播放内置的 0.6 秒单声道 PCM 短音。不循环、不依赖 WebView 定时器，不发送 Windows 通知或写入通知中心。移除通知插件及其专用依赖，没有新增依赖或 capability；原通知 IPC 返回 `Plugin not found`，前端不能直接播放声音。
+- 继续先持久化提醒记录，再启动音频；启动失败恢复原记录并报告错误。旧任务、设置、`taskReminders` 与 `deadlineReminders` 直接兼容，保留最小化、重启去重、完成后抑制、恢复补发和指定时间优先规则。音频资源编入 EXE，免安装版无需额外文件或通知来源注册。
+- 前端 35 / 35、Rust 24 / 24 自动测试、Clippy `-D warnings`、Rust 格式、TypeScript、生产页面及 Debug 原生构建通过。声音资源测试检查 WAV 格式、时长、音量峰值及起止衰减；默认跳过的手动声音诊断另行实际执行并通过，用户确认听到提示音且没有横幅。
+- 真实 Tauri / WebView2 报告：`artifacts/native-1793372881852/report.json`，无 JS 错误。自定义提醒与 DDL 提醒均在最小化时启动音频；新增的启动次数断言确认重启、完成、恢复和重新安排后只有预期的 5 次。任务操作、持久化、透明背景、右上角定位、置顶、锁定、权限拒绝及 280 / 320 / 375 CSS 像素布局回归通过。
+- 测试身份 `com.local.todowidget.acceptance` 的 Windows 通知状态实读为 `DisabledForUser`，独立声音仍能启动。全局勿扰开关未在本次测试中切换；该实现使用普通应用音频，不依赖系统通知设置，仍受系统 / 应用静音、音量及输出设备影响。完全退出应用后停止检查；提醒记录不等同于保证扬声器可闻。
