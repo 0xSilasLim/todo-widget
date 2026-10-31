@@ -40,7 +40,7 @@ export function useWidget() {
       if (!widgetService.isDesktop()) throw new Error('请通过桌面应用打开，浏览器预览无法保存数据。')
       const data = await widgetService.load()
       todos.value = data.todos
-      settings.value = data.settings
+      settings.value = { ...DEFAULT_SETTINGS, ...data.settings }
       ready.value = true
     } catch (reason) {
       error.value = `无法读取本地数据：${String(reason)}`

@@ -85,4 +85,20 @@ describe('widget controls', () => {
     expect(panel.emitted('update')).toEqual([[{ backgroundOpacity: 0.2 }]])
     expect(panel.get('.reset-button').attributes('disabled')).toBeDefined()
   })
+
+  it('previews a background color before saving and restores only the color to its default', async () => {
+    const panel = mount(SettingsPanel, { props: { settings: { ...DEFAULT_SETTINGS, backgroundOpacity: 0.35 } } })
+    const picker = panel.get<HTMLInputElement>('#background-color')
+    picker.element.value = '#95d5b2'
+    await picker.trigger('input')
+    expect(panel.emitted('previewColor')).toEqual([['#95d5b2']])
+    expect(panel.emitted('update')).toBeUndefined()
+    expect(panel.get('.color-picker-row output').text()).toBe('#95D5B2')
+    await picker.trigger('change')
+    expect(panel.emitted('update')).toEqual([[{ backgroundColor: '#95d5b2' }]])
+    await panel.setProps({ settings: { ...DEFAULT_SETTINGS, backgroundOpacity: 0.35, backgroundColor: '#95d5b2' } })
+    await panel.get('.color-reset').trigger('click')
+    expect(panel.emitted('update')?.at(-1)).toEqual([{ backgroundColor: DEFAULT_SETTINGS.backgroundColor }])
+    expect(panel.get<HTMLInputElement>('#background-opacity').element.value).toBe('35')
+  })
 })

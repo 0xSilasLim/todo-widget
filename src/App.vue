@@ -8,12 +8,23 @@ import TodoComposer from './components/TodoComposer.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import { useWidget } from './composables/useWidget'
 import { widgetService } from './services/widgetService'
+import { backgroundAppearance } from './services/appearance'
+import type { Settings } from './types'
 
 const model = useWidget()
 const { todos, settings, loading, saving, error, ready, remaining } = model
 const settingsOpen = ref(false)
 const previewOpacity = ref<number>()
-const backgroundStyle = computed(() => ({ '--background-opacity': previewOpacity.value ?? settings.value.backgroundOpacity }))
+const previewColor = ref<string>()
+const backgroundStyle = computed(() => {
+  const appearance = backgroundAppearance(previewColor.value ?? settings.value.backgroundColor)
+  return {
+    '--background-opacity': previewOpacity.value ?? settings.value.backgroundOpacity,
+    '--surface-rgb': appearance.rgb,
+    '--task-text': appearance.text,
+    '--task-muted': appearance.muted,
+  }
+})
 const directions = ['North', 'NorthEast', 'East', 'SouthEast', 'South', 'SouthWest', 'West', 'NorthWest']
 let unlistenClose: UnlistenFn | undefined
 let unlistenReminders: UnlistenFn | undefined
@@ -23,7 +34,17 @@ function resize(direction: string) {
   if (!settings.value.locked && ready.value) void model.runWindowAction(() => widgetService.startResize(direction))
 }
 
-function toggleSettings() { settingsOpen.value = !settingsOpen.value; previewOpacity.value = undefined }
+function toggleSettings() {
+  settingsOpen.value = !settingsOpen.value
+  previewOpacity.value = undefined
+  previewColor.value = undefined
+}
+
+function updateSettings(patch: Partial<Settings>) {
+  if (patch.backgroundOpacity !== undefined) previewOpacity.value = undefined
+  if (patch.backgroundColor !== undefined) previewColor.value = undefined
+  return model.updateSettings(patch)
+}
 
 onMounted(async () => {
   if (widgetService.isDesktop()) unlistenClose = await widgetService.guardClose(model.close)
@@ -43,7 +64,8 @@ onBeforeUnmount(() => { unlistenClose?.(); unlistenReminders?.() })
     <div v-if="loading" class="loading-state" role="status">正在读取本地清单…</div>
     <template v-else-if="ready">
       <SettingsPanel v-if="settingsOpen" :settings="settings" @back="toggleSettings"
-        @update="model.updateSettings" @preview-opacity="previewOpacity = $event" @reset="model.runWindowAction(widgetService.resetPosition)" />
+        @update="updateSettings" @preview-opacity="previewOpacity = $event" @preview-color="previewColor = $event"
+        @reset="model.runWindowAction(widgetService.resetPosition)" />
       <template v-else>
         <section class="list-heading"><h1>待办清单</h1><span class="count-label">{{ remaining ? `${remaining} 件待完成` : todos.length ? '全部完成了' : '从一件小事开始' }}</span></section>
         <TodoList :todos="todos" @toggle="model.toggle" @edit="model.edit" @remove="model.remove" @reorder="model.move" @move="model.moveBy" />

@@ -1,18 +1,30 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { ArrowUpRight, ChevronLeft } from '@lucide/vue'
-import type { Settings } from '../types'
+import { DEFAULT_BACKGROUND_COLOR, type Settings } from '../types'
 
 const props = defineProps<{ settings: Settings }>()
 const emit = defineEmits<{
-  back: []; update: [patch: Partial<Settings>]; reset: []; previewOpacity: [opacity: number]
+  back: []; update: [patch: Partial<Settings>]; reset: []; previewOpacity: [opacity: number]; previewColor: [color: string]
 }>()
 const opacity = ref(Math.round(props.settings.backgroundOpacity * 100))
+const color = ref(props.settings.backgroundColor)
 watch(() => props.settings.backgroundOpacity, (value) => { opacity.value = Math.round(value * 100) })
+watch(() => props.settings.backgroundColor, (value) => { color.value = value })
 
 function preview(event: Event) {
   opacity.value = Number((event.target as HTMLInputElement).value)
   emit('previewOpacity', opacity.value / 100)
+}
+
+function previewColor(event: Event) {
+  color.value = (event.target as HTMLInputElement).value
+  emit('previewColor', color.value)
+}
+
+function resetColor() {
+  color.value = DEFAULT_BACKGROUND_COLOR
+  emit('update', { backgroundColor: DEFAULT_BACKGROUND_COLOR })
 }
 </script>
 
@@ -30,6 +42,17 @@ function preview(event: Event) {
       <input id="deadline-notifications" class="switch" type="checkbox" :checked="settings.deadlineNotifications"
         @change="$emit('update', { deadlineNotifications: ($event.target as HTMLInputElement).checked })" /></label>
     <p class="hint">到时只响一声，不弹横幅，无需开启 Windows 通知。应用运行或最小化时提醒，退出后停止；静音时听不到。</p>
+    <div class="color-setting">
+      <div class="color-setting-heading"><label for="background-color">背景颜色</label>
+        <button class="color-reset" :disabled="color === DEFAULT_BACKGROUND_COLOR" @click="resetColor">恢复默认</button>
+      </div>
+      <div class="color-picker-row">
+        <input id="background-color" type="color" :value="color" @input="previewColor"
+          @change="$emit('update', { backgroundColor: ($event.target as HTMLInputElement).value })" />
+        <output for="background-color">{{ color.toUpperCase() }}</output>
+      </div>
+      <p class="hint">窗口与任务卡片同步变色，文字自动适配深浅。</p>
+    </div>
     <div class="opacity-setting"><label for="background-opacity">背景不透明度 <output for="background-opacity">{{ opacity }}%</output></label>
       <input id="background-opacity" type="range" min="20" max="100" step="1" :value="opacity" @input="preview"
         @change="$emit('update', { backgroundOpacity: opacity / 100 })" />

@@ -192,6 +192,21 @@ describe('local task state', () => {
     expect(service.saveSettings).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, backgroundOpacity: 1 })
   })
 
+  it('migrates a missing color and restores a saved color independently from opacity and other settings', async () => {
+    service.load.mockResolvedValue({ todos: [], settings: { alwaysOnTop: false, locked: true, backgroundOpacity: 0.35, deadlineNotifications: true } })
+    const widget = useWidget()
+    await widget.initialize()
+    expect(widget.settings.value.backgroundColor).toBe(DEFAULT_SETTINGS.backgroundColor)
+    await widget.updateSettings({ backgroundColor: '#95d5b2' })
+    const saved = structuredClone(service.saveSettings.mock.lastCall?.[0])
+    expect(saved).toEqual({ alwaysOnTop: false, locked: true, backgroundOpacity: 0.35, deadlineNotifications: true, backgroundColor: '#95d5b2' })
+    service.load.mockResolvedValue({ todos: [], settings: saved })
+    const restarted = useWidget()
+    await restarted.initialize()
+    expect(restarted.settings.value).toEqual(saved)
+    expect(service.saveTodos).not.toHaveBeenCalled()
+  })
+
   it('preserves deadlines through text edits, sorting, completion and restore, and can change or clear them', async () => {
     const widget = useWidget()
     await widget.initialize()

@@ -51,13 +51,13 @@ describe('deadline times and states', () => {
 
 describe('deadline controls', () => {
   it('supports date-only entry, time editing, shortcuts and clearing', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 9, 31, 12))
     const editor = mount(DeadlineEditor, { props: { modelValue: null, idPrefix: 'test' } })
     await editor.get('input[type="date"]').setValue('2026-10-26')
     expect(editor.emitted('update:modelValue')?.at(-1)).toEqual([parseLocalDeadline('2026-10-26')])
     await editor.get('input[type="time"]').setValue('18:30')
     expect(editor.emitted('update:modelValue')?.at(-1)).toEqual([parseLocalDeadline('2026-10-26', '18:30')])
-    vi.useFakeTimers({ toFake: ['Date'] })
-    vi.setSystemTime(new Date(2026, 9, 31, 12))
     await editor.findAll('button')[1].trigger('click')
     expect(editor.get<HTMLInputElement>('input[type="date"]').element.value).toBe('2026-11-01')
     await editor.findAll('button')[2].trigger('click')

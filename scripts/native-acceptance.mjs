@@ -19,6 +19,14 @@ const report = { artifactDir, checks: [], errors: [] }
 const audioStarts = () => (readFileSync(resolve(artifactDir, 'app.log'), 'utf8').match(/\[reminder-audio\] started/g) ?? []).length
 let child, browser, page
 
+function contrast(foreground, background) {
+  const luminance = color => color.match(/\d+(?:\.\d+)?/g).slice(0, 3).map(Number)
+    .map(channel => channel / 255).map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4)
+    .reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index], 0)
+  const values = [luminance(foreground), luminance(background)].sort((a, b) => a - b)
+  return (values[1] + .05) / (values[0] + .05)
+}
+
 function measure() {
   const result = JSON.parse(execFileSync(python, [probeScript, String(child.pid)], { encoding: 'utf8' }))
   expect(result.windows).toHaveLength(1)
@@ -46,6 +54,9 @@ async function launch() {
   page.on('pageerror', (error) => report.errors.push(String(error)))
   await expect(page.getByText('已保存在本机', { exact: true })).toBeVisible()
   await expect(page.locator('.error-banner')).toHaveCount(0)
+  // Wait for the native reveal command as well as Vue's ready state.
+  await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('reveal_widget'))
+  await expect(page.locator('.widget')).toHaveCSS('opacity', '1')
 }
 
 async function close() {
@@ -145,6 +156,104 @@ try {
   report.alpha100 = await opacity(100, 'opacity-100.png')
   await opacity(20, 'settings.png')
   report.checks.push('Background pixel alpha is 51 at 20% and 255 at 100%; widget opacity stays 1')
+  const savedSettings = () => JSON.parse(readFileSync(resolve(profile, 'widget.json'), 'utf8')).settings
+  const colorPicker = page.locator('#background-color')
+  await expect(colorPicker).toHaveValue('#f4f6f9')
+  await colorPicker.evaluate(input => {
+    input.value = '#95d5b2'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await expect(page.locator('.widget')).toHaveCSS('background-color', 'rgba(149, 213, 178, 0.2)')
+  expect(savedSettings().backgroundColor).toBe('#f4f6f9')
+  await colorPicker.dispatchEvent('change')
+  await saveSettled()
+  expect(savedSettings().backgroundColor).toBe('#95d5b2')
+  report.colorSolid = await opacity(100, 'background-color-solid.png')
+  report.colorTransparent = await opacity(20, 'background-color-transparent.png')
+  for (const result of [report.colorSolid, report.colorTransparent]) {
+    for (const [index, expected] of [149, 213, 178].entries()) {
+      expect(Math.abs(result.pixels.background[index] - expected)).toBeLessThanOrEqual(3)
+    }
+  }
+  await colorPicker.scrollIntoViewIfNeeded()
+  await page.screenshot({ path: resolve(artifactDir, 'background-color-settings.png'), omitBackground: true })
+  report.colorSettingsLayout = await page.evaluate(() => {
+    const widget = document.querySelector('.widget'), original = widget.style.width
+    const results = [280, 320, 375].map(width => {
+      widget.style.width = `${width}px`
+      const panel = document.querySelector('.settings-panel'), bounds = panel.getBoundingClientRect()
+      return { width, noOverflow: panel.scrollWidth <= panel.clientWidth,
+        controlsFit: [...panel.querySelectorAll('input, button, output')].every(element => {
+          const rect = element.getBoundingClientRect()
+          return rect.left >= bounds.left - .5 && rect.right <= bounds.right + .5
+        }) }
+    })
+    widget.style.width = original
+    return results
+  })
+  for (const layout of report.colorSettingsLayout) {
+    expect(layout.noOverflow).toBe(true)
+    expect(layout.controlsFit).toBe(true)
+  }
+  const settingsBeforeInvalidColor = savedSettings()
+  const invalidColorError = await page.evaluate(async settings => {
+    try { await window.__TAURI_INTERNALS__.invoke('update_settings', { settings: { ...settings, backgroundColor: '#12345g' } }); return 'ALLOWED' }
+    catch (error) { return String(error) }
+  }, settingsBeforeInvalidColor)
+  expect(invalidColorError).toContain('#RRGGBB')
+  expect(savedSettings()).toEqual(settingsBeforeInvalidColor)
+  report.taskColorContrast = []
+  const todosBeforeColorChanges = JSON.parse(readFileSync(resolve(profile, 'widget.json'), 'utf8')).todos
+  for (const [hex, expected] of [['#000000', 'rgb(0, 0, 0)'], ['#ffffff', 'rgb(255, 255, 255)'], ['#ff0000', 'rgb(255, 0, 0)'], ['#95d5b2', 'rgb(149, 213, 178)']]) {
+    await page.locator('#background-color').fill(hex)
+    await saveSettled()
+    await page.getByRole('button', { name: '返回清单', exact: true }).click()
+    await showPending()
+    await page.locator('.list-heading h1').hover()
+    const pendingColors = await page.locator('.todo-item').first().evaluate(item => ({
+      background: getComputedStyle(item).backgroundColor,
+      text: getComputedStyle(item.querySelector('.todo-text')).color,
+      time: getComputedStyle(item.querySelector('.todo-created')).color,
+      icon: getComputedStyle(item.querySelector('.row-button:not(.selected)')).color,
+      opacity: getComputedStyle(item).opacity,
+    }))
+    expect(pendingColors.background).toBe(expected)
+    expect(pendingColors.opacity).toBe('1')
+    expect(contrast(pendingColors.text, pendingColors.background)).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(pendingColors.time, pendingColors.background)).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(pendingColors.icon, pendingColors.background)).toBeGreaterThanOrEqual(3)
+    if (hex === '#000000') {
+      await page.getByRole('button', { name: '编辑：完成窗口验收', exact: true }).click()
+      const editorColors = await page.locator('.edit-form').evaluate(form => {
+        const textarea = getComputedStyle(form.querySelector('textarea'))
+        const legend = getComputedStyle(form.querySelector('.deadline-editor legend'))
+        return [[textarea.color, textarea.backgroundColor], [legend.color, legend.backgroundColor],
+          [getComputedStyle(form.querySelector('.edit-actions .hint')).color, getComputedStyle(form.closest('.todo-item')).backgroundColor]]
+      })
+      for (const [foreground, background] of editorColors) expect(contrast(foreground, background)).toBeGreaterThanOrEqual(4.5)
+      await page.getByRole('button', { name: '取消编辑', exact: true }).click()
+    }
+    await showCompleted()
+    const completedColors = await page.locator('.todo-item').first().evaluate(item => ({
+      background: getComputedStyle(item).backgroundColor, text: getComputedStyle(item.querySelector('.todo-text')).color,
+    }))
+    expect(completedColors.background).toBe(expected)
+    expect(contrast(completedColors.text, completedColors.background)).toBeGreaterThanOrEqual(4.5)
+    if (hex === '#000000') {
+      await page.getByRole('button', { name: '永久删除：整理今天的三件重点', exact: true }).click()
+      const warningColors = await page.locator('.delete-confirmation p').evaluate(element => ({
+        text: getComputedStyle(element).color, background: getComputedStyle(element).backgroundColor,
+      }))
+      expect(contrast(warningColors.text, warningColors.background)).toBeGreaterThanOrEqual(4.5)
+      await page.getByRole('button', { name: '取消', exact: true }).click()
+    }
+    report.taskColorContrast.push({ hex, pending: pendingColors, completed: completedColors })
+    await showPending()
+    if (hex === '#95d5b2') await page.screenshot({ path: resolve(artifactDir, 'task-background-color.png'), omitBackground: true })
+    await page.getByRole('button', { name: '窗口设置', exact: true }).click()
+  }
+  expect(JSON.parse(readFileSync(resolve(profile, 'widget.json'), 'utf8')).todos).toEqual(todosBeforeColorChanges)
+  report.checks.push('Task cards in pending/completed views follow the chosen background; black, white, red and green maintain readable text/time/icons; dark-card editors and delete confirmation remain readable without changing tasks')
   await page.locator('#always-on-top').uncheck()
   await saveSettled()
   expect(measure().topmost).toBe(false)
@@ -185,10 +294,19 @@ try {
   expect(report.restoredWindow.topmost).toBe(false)
   expect(report.restoredWindow.resizable).toBe(false)
   const restoredAlpha = await page.locator('.widget').evaluate((element) => getComputedStyle(element).backgroundColor)
-  expect(restoredAlpha).toContain('0.2')
+  expect(restoredAlpha).toBe('rgba(149, 213, 178, 0.2)')
+  await expect(page.locator('.todo-item')).toHaveCSS('background-color', 'rgb(149, 213, 178)')
+  await expect(page.locator('.todo-item')).toHaveCSS('opacity', '1')
   report.checks.push('Full process restart restores text, completion, order, opacity, topmost, lock and window geometry from Tauri Store')
   await page.screenshot({ path: resolve(artifactDir, 'restarted.png'), omitBackground: true })
   await page.getByRole('button', { name: '窗口设置', exact: true }).click()
+  await expect(page.locator('#background-color')).toHaveValue('#95d5b2')
+  await page.getByRole('button', { name: '恢复默认', exact: true }).click()
+  await saveSettled()
+  expect(savedSettings().backgroundColor).toBe('#f4f6f9')
+  expect(savedSettings().backgroundOpacity).toBe(0.2)
+  await expect(page.locator('.widget')).toHaveCSS('background-color', 'rgba(244, 246, 249, 0.2)')
+  report.checks.push('Color preview does not save until committed; RGB and alpha pixels, restart persistence, default-color reset without changing opacity, invalid-color rejection and narrow settings layouts pass')
   await page.locator('#lock-position').uncheck()
   await page.locator('#always-on-top').check()
   await opacity(88, 'settings-default.png')

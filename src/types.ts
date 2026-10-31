@@ -19,6 +19,7 @@ export interface Settings {
   alwaysOnTop: boolean
   locked: boolean
   backgroundOpacity: number
+  backgroundColor: string
   deadlineNotifications: boolean
 }
 
@@ -27,10 +28,13 @@ export interface WidgetData {
   settings: Settings
 }
 
+export const DEFAULT_BACKGROUND_COLOR = '#f4f6f9'
+
 export const DEFAULT_SETTINGS: Settings = {
   alwaysOnTop: true,
   locked: false,
   backgroundOpacity: 0.88,
+  backgroundColor: DEFAULT_BACKGROUND_COLOR,
   deadlineNotifications: false,
 }
 

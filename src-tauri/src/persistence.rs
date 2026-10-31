@@ -38,6 +38,7 @@ pub struct Settings {
     pub always_on_top: bool,
     pub locked: bool,
     pub background_opacity: f64,
+    pub background_color: String,
     pub deadline_notifications: bool,
 }
 
@@ -47,6 +48,7 @@ impl Default for Settings {
             always_on_top: true,
             locked: false,
             background_opacity: 0.88,
+            background_color: "#f4f6f9".into(),
             deadline_notifications: false,
         }
     }
@@ -56,6 +58,10 @@ impl Settings {
     pub fn validate(&self) -> Result<(), String> {
         if !self.background_opacity.is_finite() || !(0.2..=1.0).contains(&self.background_opacity) {
             return Err("背景不透明度必须介于 20% 和 100%".into());
+        }
+        let color = self.background_color.as_bytes();
+        if color.len() != 7 || color[0] != b'#' || !color[1..].iter().all(u8::is_ascii_hexdigit) {
+            return Err("背景颜色必须为 #RRGGBB 格式。".into());
         }
         Ok(())
     }
@@ -226,6 +232,47 @@ pub(crate) fn restore_value(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn background_colors_round_trip_validate_and_default_for_legacy_settings() {
+        let legacy: Settings = serde_json::from_value(serde_json::json!({
+            "locked": true, "alwaysOnTop": false, "backgroundOpacity": 0.35
+        }))
+        .unwrap();
+        assert_eq!(legacy.background_color, "#f4f6f9");
+        assert!(legacy.locked);
+        assert!(!legacy.always_on_top);
+        assert_eq!(legacy.background_opacity, 0.35);
+        for color in ["#000000", "#ffffff", "#95d5b2", "#Ab10FF"] {
+            let settings = Settings {
+                background_color: color.into(),
+                ..legacy.clone()
+            };
+            assert!(settings.validate().is_ok());
+            let restored: Settings =
+                serde_json::from_value(serde_json::to_value(settings).unwrap()).unwrap();
+            assert_eq!(restored.background_color, color);
+            assert_eq!(restored.background_opacity, 0.35);
+            assert!(restored.locked);
+        }
+        for color in [
+            "",
+            "red",
+            "#fff",
+            "#12345678",
+            "123456",
+            "#gggggg",
+            "#１２３４５６",
+            "var(--color-text)",
+        ] {
+            assert!(Settings {
+                background_color: color.into(),
+                ..Settings::default()
+            }
+            .validate()
+            .is_err());
+        }
+    }
 
     #[test]
     fn opacity_must_stay_in_supported_range() {
