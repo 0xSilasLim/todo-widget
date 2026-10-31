@@ -46,4 +46,19 @@ describe('whole-widget color palette', () => {
   it('uses the default palette for an invalid stored color', () => {
     expect(backgroundAppearance('invalid')).toEqual(backgroundAppearance(DEFAULT_BACKGROUND_COLOR))
   })
+
+  it('applies the chosen opacity to every module background without fading foreground colors', () => {
+    const solid = backgroundAppearance('#95d5b2', 1)
+    for (const opacity of [0.2, 0.55, 1]) {
+      const theme = backgroundAppearance('#95d5b2', opacity)
+      for (const role of ['surface', 'raised', 'border', 'accent', 'accent-hover', 'accent-soft', 'danger-soft', 'warning-soft'] as const) {
+        const color = solid[`--color-${role}`]
+        const channels = [1, 3, 5].map(offset => Number.parseInt(color.slice(offset, offset + 2), 16)).join(', ')
+        expect(theme[`--background-${role}`]).toBe(`rgba(${channels}, ${opacity})`)
+      }
+      expect(theme['--color-text']).toBe(solid['--color-text'])
+      expect(theme['--color-muted']).toBe(solid['--color-muted'])
+    }
+    expect(backgroundAppearance('#95d5b2', 0.2)['--color-on-accent']).not.toBe(solid['--color-on-accent'])
+  })
 })

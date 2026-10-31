@@ -57,7 +57,7 @@ function resetColor() {
       <input id="background-opacity" type="range" min="20" max="100" step="1" :value="opacity" @input="preview"
         @change="$emit('update', { backgroundOpacity: opacity / 100 })" />
       <div class="range-labels"><span>20% 轻透</span><span>100% 实色</span></div>
-      <p class="hint">只调整背景，文字和按钮保持清晰。</p>
+      <p class="hint">窗口、卡片、按钮和输入框的底色一起调整，文字与图标保持不透明。</p>
     </div>
     <button class="secondary-button reset-button" :disabled="settings.locked" @click="$emit('reset')">
       <ArrowUpRight :size="16" />回到主屏右上角

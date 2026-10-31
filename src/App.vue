@@ -19,7 +19,8 @@ const previewColor = ref<string>()
 const backgroundStyle = computed(() => {
   return {
     '--background-opacity': previewOpacity.value ?? settings.value.backgroundOpacity,
-    ...backgroundAppearance(previewColor.value ?? settings.value.backgroundColor),
+    ...backgroundAppearance(previewColor.value ?? settings.value.backgroundColor,
+      previewOpacity.value ?? settings.value.backgroundOpacity),
   }
 })
 const directions = ['North', 'NorthEast', 'East', 'SouthEast', 'South', 'SouthWest', 'West', 'NorthWest']

@@ -86,12 +86,13 @@ async function themedModules(selectors) {
   return page.evaluate(selectors => {
     const widget = document.querySelector('.widget'), theme = getComputedStyle(widget)
     const role = name => {
-      const hex = theme.getPropertyValue(name).trim()
-      return `rgb(${[1, 3, 5].map(offset => Number.parseInt(hex.slice(offset, offset + 2), 16)).join(', ')})`
+      const probe = document.createElement('span')
+      probe.style.backgroundColor = theme.getPropertyValue(name.replace('--color-', '--background-')).trim()
+      return probe.style.backgroundColor
     }
     return selectors.map(([selector, name]) => {
       const element = document.querySelector(selector), style = getComputedStyle(element)
-      return { selector, expected: role(name), background: style.backgroundColor, text: style.color }
+      return { selector, expected: role(name), background: style.backgroundColor, text: style.color, opacity: style.opacity }
     })
   }, selectors)
 }
@@ -237,6 +238,7 @@ async function run() {
   expect(savedSettings()).toEqual(settingsBeforeInvalidColor)
   report.taskColorContrast = []
   const todosBeforeColorChanges = JSON.parse(readFileSync(resolve(profile, 'widget.json'), 'utf8')).todos
+  await opacity(100, 'theme-solid-settings.png')
   for (const [hex, expected] of [['#000000', 'rgb(0, 0, 0)'], ['#ffffff', 'rgb(255, 255, 255)'], ['#ff0000', 'rgb(255, 0, 0)'], ['#95d5b2', 'rgb(149, 213, 178)']]) {
     await page.locator('#background-color').fill(hex)
     await saveSettled()
@@ -321,6 +323,51 @@ async function run() {
   }
   expect(JSON.parse(readFileSync(resolve(profile, 'widget.json'), 'utf8')).todos).toEqual(todosBeforeColorChanges)
   report.checks.push('Task cards in pending/completed views follow the chosen background; black, white, red and green maintain readable text/time/icons; dark-card editors and delete confirmation remain readable without changing tasks')
+  report.moduleOpacity = []
+  for (const percent of [20, 55, 100, 20]) {
+    await opacity(percent, `modules-settings-${percent}.png`)
+    await page.locator('.settings-panel h1').hover()
+    const settingsModules = await themedModules([
+      ['.settings-panel', '--color-surface'], ['#background-color', '--color-raised'],
+      ['.reset-button', '--color-raised'], ['.switch:not(:checked)', '--color-border'],
+      ['.switch:checked', '--color-accent'],
+    ])
+    await page.getByRole('button', { name: '返回清单', exact: true }).click()
+    await showPending()
+    await page.locator('.list-heading h1').hover()
+    await page.locator('#new-todo').fill('透明度验收草稿')
+    const listModules = await themedModules([
+      ['.todo-item', '--color-surface'], ['.drag-area', '--color-surface'], ['.task-tab', '--color-surface'],
+      ['#new-todo', '--color-raised'], ['.composer .priority-select', '--color-accent-soft'],
+      ['.add-button', '--color-accent'], ['.deadline-toggle', '--color-surface'],
+      ['.reminder-toggle', '--color-surface'], ['.widget-footer > span', '--color-surface'],
+    ])
+    checkModules([...settingsModules, ...listModules], false)
+    for (const sample of [...settingsModules, ...listModules]) {
+      const channels = sample.background.match(/[\d.]+/g).map(Number)
+      expect(channels.length === 4 ? channels[3] : 1, sample.selector).toBe(percent / 100)
+      expect(sample.opacity, sample.selector).toBe('1')
+      expect(sample.text.startsWith('rgb(') || sample.text.endsWith(', 1)')).toBe(true)
+    }
+    await page.locator('#new-todo').fill('')
+    const imagePath = resolve(artifactDir, `modules-tasks-${percent}.png`)
+    await page.screenshot({ path: imagePath, omitBackground: true })
+    const points = await page.evaluate(() => {
+      const task = document.querySelector('.todo-item').getBoundingClientRect()
+      const text = document.querySelector('.todo-text').getBoundingClientRect()
+      const scale = window.devicePixelRatio
+      return { card: [Math.round((task.left + task.width / 2) * scale), Math.round((task.bottom - 3) * scale)],
+        text: [text.left, text.top, text.right, text.bottom].map(value => Math.round(value * scale)) }
+    })
+    const pixels = JSON.parse(execFileSync(python, ['-c',
+      'import json,sys; from PIL import Image; im=Image.open(sys.argv[1]).convert("RGBA"); p=json.loads(sys.argv[2]); print(json.dumps({"cardAlpha":im.getpixel(tuple(p["card"]))[3],"textHasOpaquePixels":any(a==255 for *rgb,a in im.crop(tuple(p["text"])).getdata())}))',
+      imagePath, JSON.stringify(points)], { encoding: 'utf8' }))
+    expect(Math.abs(pixels.cardAlpha - Math.round((1 - (1 - percent / 100) ** 2) * 255))).toBeLessThanOrEqual(2)
+    expect(pixels.textHasOpaquePixels).toBe(true)
+    report.moduleOpacity.push({ percent, settingsModules, listModules, pixels })
+    await page.getByRole('button', { name: '窗口设置', exact: true }).click()
+  }
+  report.checks.push('At 20%, 55% and 100%, card, panel, input, tab, button and switch backgrounds share the chosen alpha; all module and foreground opacity stays 1; restarting restores translucent cards')
   await page.locator('#always-on-top').uncheck()
   await saveSettled()
   expect(measure().topmost).toBe(false)
@@ -362,7 +409,7 @@ async function run() {
   expect(report.restoredWindow.resizable).toBe(false)
   const restoredAlpha = await page.locator('.widget').evaluate((element) => getComputedStyle(element).backgroundColor)
   expect(restoredAlpha).toBe('rgba(149, 213, 178, 0.2)')
-  await expect(page.locator('.todo-item')).toHaveCSS('background-color', 'rgb(149, 213, 178)')
+  await expect(page.locator('.todo-item')).toHaveCSS('background-color', 'rgba(149, 213, 178, 0.2)')
   await expect(page.locator('.todo-item')).toHaveCSS('opacity', '1')
   report.checks.push('Full process restart restores text, completion, order, opacity, topmost, lock and window geometry from Tauri Store')
   await page.screenshot({ path: resolve(artifactDir, 'restarted.png'), omitBackground: true })

@@ -45,8 +45,10 @@ function readableTint(seed: string, target: string, backgrounds: string[]) {
   return target
 }
 
-export function backgroundAppearance(color: string) {
+export function backgroundAppearance(color: string, opacity = 1) {
   const hex = /^#[\da-f]{6}$/i.test(color) ? color.toLowerCase() : DEFAULT_BACKGROUND_COLOR
+  const alpha = Number.isFinite(opacity) ? Math.min(1, Math.max(0.2, opacity)) : 1
+  const background = (color: string) => `rgba(${rgb(color).join(', ')}, ${alpha})`
   const text = foreground(hex), dark = text === TEXT_COLORS.light
   const ink = dark ? TEXT_COLORS.light : TEXT_COLORS.dark
   const raised = surface(hex, TEXT_COLORS.light, 0.08, text)
@@ -69,11 +71,19 @@ export function backgroundAppearance(color: string) {
     '--color-accent': accent,
     '--color-accent-hover': accentHover,
     '--color-accent-soft': soft,
-    '--color-on-accent': onAccent,
+    '--color-on-accent': foreground(mix(hex, accent, alpha)),
     '--color-danger': readableTint('#a32636', ink, [hex, raised, dangerSoft]),
     '--color-danger-soft': dangerSoft,
     '--color-warning': readableTint('#805218', ink, [hex, raised, warningSoft]),
     '--color-warning-soft': warningSoft,
+    '--background-surface': background(hex),
+    '--background-raised': background(raised),
+    '--background-border': background(border),
+    '--background-accent': background(accent),
+    '--background-accent-hover': background(accentHover),
+    '--background-accent-soft': background(soft),
+    '--background-danger-soft': background(dangerSoft),
+    '--background-warning-soft': background(warningSoft),
     'color-scheme': dark ? 'dark' : 'light',
   }
 }
