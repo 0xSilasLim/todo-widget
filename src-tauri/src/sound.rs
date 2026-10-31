@@ -34,7 +34,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bundled_chime_is_short_pcm_audio_with_a_soft_attack_and_decay() {
+    fn bundled_audio_has_two_identical_soft_chimes_separated_by_silence() {
         let u16_at = |offset| u16::from_le_bytes(CHIME[offset..offset + 2].try_into().unwrap());
         let u32_at = |offset| u32::from_le_bytes(CHIME[offset..offset + 4].try_into().unwrap());
         assert_eq!(&CHIME[..4], b"RIFF");
@@ -49,13 +49,23 @@ mod tests {
         assert_eq!(&CHIME[36..40], b"data");
         assert_eq!(u32_at(40) as usize, CHIME.len() - 44);
         let duration = f64::from(u32_at(40)) / f64::from(u32_at(28));
-        assert!((0.3..=0.8).contains(&duration));
+        assert!((duration - 1.35).abs() < 1.0 / 44_100.0);
         let samples: Vec<_> = CHIME[44..]
             .as_chunks::<2>()
             .0
             .iter()
             .map(|bytes| i16::from_le_bytes(*bytes))
             .collect();
+        let chime_frames = 44_100 * 600 / 1000;
+        let gap_frames = 44_100 * 150 / 1000;
+        assert_eq!(samples.len(), chime_frames * 2 + gap_frames);
+        assert_eq!(
+            samples[..chime_frames],
+            samples[chime_frames + gap_frames..]
+        );
+        assert!(samples[chime_frames..chime_frames + gap_frames]
+            .iter()
+            .all(|value| *value == 0));
         let peak = samples
             .iter()
             .map(|value| value.unsigned_abs())
@@ -70,8 +80,8 @@ mod tests {
 
     #[test]
     #[ignore = "Audible diagnostic: requires a Windows audio device"]
-    fn plays_a_short_chime() {
+    fn plays_two_short_chimes() {
         play().unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(800));
+        std::thread::sleep(std::time::Duration::from_millis(1600));
     }
 }

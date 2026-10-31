@@ -41,7 +41,6 @@ function resetColor() {
     <label class="setting-row" for="deadline-notifications"><span><strong>DDL 自动提醒</strong><small>未单独设置提醒的任务，在截止前 1 小时、到期时提醒</small></span>
       <input id="deadline-notifications" class="switch" type="checkbox" :checked="settings.deadlineNotifications"
         @change="$emit('update', { deadlineNotifications: ($event.target as HTMLInputElement).checked })" /></label>
-    <p class="hint">到时只响一声，不弹横幅，无需开启 Windows 通知。应用运行或最小化时提醒，退出后停止；静音时听不到。</p>
     <div class="color-setting">
       <div class="color-setting-heading"><label for="background-color">背景颜色</label>
         <button class="color-reset" :disabled="color === DEFAULT_BACKGROUND_COLOR" @click="resetColor">恢复默认</button>
@@ -51,7 +50,6 @@ function resetColor() {
           @change="$emit('update', { backgroundColor: ($event.target as HTMLInputElement).value })" />
         <output for="background-color">{{ color.toUpperCase() }}</output>
       </div>
-      <p class="hint">按钮、面板、输入框与任务卡片一起变色，文字自动适配深浅。</p>
     </div>
     <div class="opacity-setting"><label for="background-opacity">背景不透明度 <output for="background-opacity">{{ opacity }}%</output></label>
       <input id="background-opacity" type="range" min="20" max="100" step="1" :value="opacity" @input="preview"
