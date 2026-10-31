@@ -17,12 +17,9 @@ const settingsOpen = ref(false)
 const previewOpacity = ref<number>()
 const previewColor = ref<string>()
 const backgroundStyle = computed(() => {
-  const appearance = backgroundAppearance(previewColor.value ?? settings.value.backgroundColor)
   return {
     '--background-opacity': previewOpacity.value ?? settings.value.backgroundOpacity,
-    '--surface-rgb': appearance.rgb,
-    '--task-text': appearance.text,
-    '--task-muted': appearance.muted,
+    ...backgroundAppearance(previewColor.value ?? settings.value.backgroundColor),
   }
 })
 const directions = ['North', 'NorthEast', 'East', 'SouthEast', 'South', 'SouthWest', 'West', 'NorthWest']

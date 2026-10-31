@@ -51,7 +51,7 @@ function resetColor() {
           @change="$emit('update', { backgroundColor: ($event.target as HTMLInputElement).value })" />
         <output for="background-color">{{ color.toUpperCase() }}</output>
       </div>
-      <p class="hint">窗口与任务卡片同步变色，文字自动适配深浅。</p>
+      <p class="hint">按钮、面板、输入框与任务卡片一起变色，文字自动适配深浅。</p>
     </div>
     <div class="opacity-setting"><label for="background-opacity">背景不透明度 <output for="background-opacity">{{ opacity }}%</output></label>
       <input id="background-opacity" type="range" min="20" max="100" step="1" :value="opacity" @input="preview"

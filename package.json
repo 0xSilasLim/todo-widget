@@ -1,6 +1,6 @@
 {
   "name": "todo-widget",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -16,6 +16,7 @@
     "desktop:dev": "node scripts/tauri.mjs dev",
     "desktop:build": "node scripts/tauri.mjs build",
     "test:native": "node scripts/native-acceptance.mjs",
+    "test:native:theme": "node scripts/native-acceptance.mjs --theme-only",
     "test:single-instance": "node scripts/single-instance-acceptance.mjs",
     "release:prepare": "node scripts/prepare-release.mjs"
   },

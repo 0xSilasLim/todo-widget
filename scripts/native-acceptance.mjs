@@ -12,10 +12,19 @@ const probeScript = resolve(root, 'scripts/window_probe.py')
 const python = process.env.PYTHON ?? 'python'
 const port = Number(process.env.TODO_WIDGET_CDP_PORT ?? 9223)
 const keepOpen = process.argv.includes('--keep-open')
+const themeOnly = process.argv.includes('--theme-only')
+const themeCreatedAt = Date.now()
 mkdirSync(profile, { recursive: true })
+if (themeOnly) writeFileSync(resolve(profile, 'widget.json'), JSON.stringify({
+  settings: { alwaysOnTop: true, locked: false, backgroundOpacity: 0.88, deadlineNotifications: false },
+  todos: [
+    { id: 'theme-pending', text: '完成窗口验收', completed: false, priority: 'p2', createdAt: themeCreatedAt },
+    { id: 'theme-completed', text: '整理今天的三件重点', completed: true, priority: 'p2', createdAt: themeCreatedAt },
+  ],
+}))
 const log = openSync(resolve(artifactDir, 'app.log'), 'a')
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-const report = { artifactDir, checks: [], errors: [] }
+const report = { artifactDir, mode: themeOnly ? 'theme' : 'full', checks: [], errors: [] }
 const audioStarts = () => (readFileSync(resolve(artifactDir, 'app.log'), 'utf8').match(/\[reminder-audio\] started/g) ?? []).length
 let child, browser, page
 
@@ -73,6 +82,27 @@ async function saveSettled() { await expect(page.getByText('已保存在本机',
 async function showPending() { await page.getByRole('tab', { name: /^待完成/ }).click() }
 async function showCompleted() { await page.getByRole('tab', { name: /^已完成/ }).click() }
 
+async function themedModules(selectors) {
+  return page.evaluate(selectors => {
+    const widget = document.querySelector('.widget'), theme = getComputedStyle(widget)
+    const role = name => {
+      const hex = theme.getPropertyValue(name).trim()
+      return `rgb(${[1, 3, 5].map(offset => Number.parseInt(hex.slice(offset, offset + 2), 16)).join(', ')})`
+    }
+    return selectors.map(([selector, name]) => {
+      const element = document.querySelector(selector), style = getComputedStyle(element)
+      return { selector, expected: role(name), background: style.backgroundColor, text: style.color }
+    })
+  }, selectors)
+}
+
+function checkModules(samples, checkText = true) {
+  for (const sample of samples) {
+    expect(sample.background, sample.selector).toBe(sample.expected)
+    if (checkText) expect(contrast(sample.text, sample.background), sample.selector).toBeGreaterThanOrEqual(4.5)
+  }
+}
+
 async function opacity(value, name) {
   await page.locator('#background-opacity').evaluate((input, value) => {
     input.value = String(value)
@@ -89,7 +119,7 @@ async function opacity(value, name) {
   return { style, pixels, imagePath }
 }
 
-try {
+async function run() {
   await launch()
   report.initialWindow = measure()
   const primary = report.initialWindow.monitors.find((monitor) => monitor.primary)
@@ -117,39 +147,42 @@ try {
   expect(Object.values(report.composerFocus).every(Boolean)).toBe(true)
   report.checks.push('New-task input focus outline fits all four edges of its scrolling container')
 
-  for (const text of ['整理今天的重点', '完成窗口验收', '待删除的验收任务']) {
-    await page.getByLabel('新增待办', { exact: true }).fill(text)
-    await page.getByRole('button', { name: '添加待办', exact: true }).click()
+  let originalCreatedAt = new Date(themeCreatedAt).toISOString()
+  if (!themeOnly) {
+    for (const text of ['整理今天的重点', '完成窗口验收', '待删除的验收任务']) {
+      await page.getByLabel('新增待办', { exact: true }).fill(text)
+      await page.getByRole('button', { name: '添加待办', exact: true }).click()
+    }
+    originalCreatedAt = await page.locator('.todo-item').first().locator('time').getAttribute('datetime')
+    expect(Math.abs(Date.parse(originalCreatedAt) - Date.now())).toBeLessThan(60_000)
+    await expect(page.locator('.todo-item').first().locator('time')).toHaveText(/^\d{2}\/\d{2}\s\d{2}:\d{2}$/)
+    await expect(page.locator('.todo-item').first().locator('time')).toHaveAttribute('aria-label', /^添加于 /)
+    await page.getByRole('button', { name: '编辑：整理今天的重点', exact: true }).click()
+    await page.getByRole('textbox', { name: '编辑待办内容', exact: true }).fill('整理今天的三件重点')
+    await page.getByRole('textbox', { name: '编辑待办内容', exact: true }).press('Enter')
+    await page.getByRole('checkbox', { name: '完成：整理今天的三件重点', exact: true }).click()
+    await expect(page.locator('.todo-text')).toHaveText(['完成窗口验收', '待删除的验收任务'])
+    await expect(page.getByRole('tab', { name: /^已完成/ })).toHaveText('已完成1')
+    await showCompleted()
+    await expect(page.locator('.todo-text')).toHaveText(['整理今天的三件重点'])
+    await expect(page.locator('time')).toHaveAttribute('datetime', originalCreatedAt)
+    await expect(page.locator('.sort-handle')).toHaveCount(0)
+    await page.getByRole('checkbox', { name: '恢复：整理今天的三件重点', exact: true }).click()
+    await expect(page.getByText('还没有已完成任务', { exact: true })).toBeVisible()
+    await showPending()
+    await page.getByRole('button', { name: '删除：待删除的验收任务', exact: true }).click()
+    await page.getByRole('button', { name: /^排序：完成窗口验收/ }).press('Alt+ArrowUp')
+    await expect(page.locator('.todo-text')).toHaveText(['完成窗口验收', '整理今天的三件重点'])
+    await page.locator('.sort-handle').nth(0).dragTo(page.locator('.sort-handle').nth(1))
+    await expect(page.locator('.todo-text')).toHaveText(['整理今天的三件重点', '完成窗口验收'])
+    await page.locator('.sort-handle').nth(0).dragTo(page.locator('.sort-handle').nth(1))
+    await expect(page.locator('.todo-text')).toHaveText(['完成窗口验收', '整理今天的三件重点'])
+    await page.getByRole('checkbox', { name: '完成：整理今天的三件重点', exact: true }).click()
+    await expect(page.locator('.todo-text')).toHaveText(['完成窗口验收'])
+    await saveSettled()
+    await page.screenshot({ path: resolve(artifactDir, 'tasks.png'), omitBackground: true })
+    report.checks.push('Native WebView2: add, edit, automatic completion grouping, restore, delete, drag sorting and keyboard sorting')
   }
-  const originalCreatedAt = await page.locator('.todo-item').first().locator('time').getAttribute('datetime')
-  expect(Math.abs(Date.parse(originalCreatedAt) - Date.now())).toBeLessThan(60_000)
-  await expect(page.locator('.todo-item').first().locator('time')).toHaveText(/^\d{2}\/\d{2}\s\d{2}:\d{2}$/)
-  await expect(page.locator('.todo-item').first().locator('time')).toHaveAttribute('aria-label', /^添加于 /)
-  await page.getByRole('button', { name: '编辑：整理今天的重点', exact: true }).click()
-  await page.getByRole('textbox', { name: '编辑待办内容', exact: true }).fill('整理今天的三件重点')
-  await page.getByRole('textbox', { name: '编辑待办内容', exact: true }).press('Enter')
-  await page.getByRole('checkbox', { name: '完成：整理今天的三件重点', exact: true }).click()
-  await expect(page.locator('.todo-text')).toHaveText(['完成窗口验收', '待删除的验收任务'])
-  await expect(page.getByRole('tab', { name: /^已完成/ })).toHaveText('已完成1')
-  await showCompleted()
-  await expect(page.locator('.todo-text')).toHaveText(['整理今天的三件重点'])
-  await expect(page.locator('time')).toHaveAttribute('datetime', originalCreatedAt)
-  await expect(page.locator('.sort-handle')).toHaveCount(0)
-  await page.getByRole('checkbox', { name: '恢复：整理今天的三件重点', exact: true }).click()
-  await expect(page.getByText('还没有已完成任务', { exact: true })).toBeVisible()
-  await showPending()
-  await page.getByRole('button', { name: '删除：待删除的验收任务', exact: true }).click()
-  await page.getByRole('button', { name: /^排序：完成窗口验收/ }).press('Alt+ArrowUp')
-  await expect(page.locator('.todo-text')).toHaveText(['完成窗口验收', '整理今天的三件重点'])
-  await page.locator('.sort-handle').nth(0).dragTo(page.locator('.sort-handle').nth(1))
-  await expect(page.locator('.todo-text')).toHaveText(['整理今天的三件重点', '完成窗口验收'])
-  await page.locator('.sort-handle').nth(0).dragTo(page.locator('.sort-handle').nth(1))
-  await expect(page.locator('.todo-text')).toHaveText(['完成窗口验收', '整理今天的三件重点'])
-  await page.getByRole('checkbox', { name: '完成：整理今天的三件重点', exact: true }).click()
-  await expect(page.locator('.todo-text')).toHaveText(['完成窗口验收'])
-  await saveSettled()
-  await page.screenshot({ path: resolve(artifactDir, 'tasks.png'), omitBackground: true })
-  report.checks.push('Native WebView2: add, edit, automatic completion grouping, restore, delete, drag sorting and keyboard sorting')
 
   await page.getByRole('button', { name: '窗口设置', exact: true }).click()
   report.alpha20 = await opacity(20, 'opacity-20.png')
@@ -207,6 +240,26 @@ try {
   for (const [hex, expected] of [['#000000', 'rgb(0, 0, 0)'], ['#ffffff', 'rgb(255, 255, 255)'], ['#ff0000', 'rgb(255, 0, 0)'], ['#95d5b2', 'rgb(149, 213, 178)']]) {
     await page.locator('#background-color').fill(hex)
     await saveSettled()
+    await page.locator('.settings-panel h1').hover()
+    const settingsModules = await themedModules([
+      ['.settings-panel', '--color-surface'], ['.drag-area', '--color-surface'],
+      ['.close-button', '--color-surface'], ['#background-color', '--color-raised'],
+      ['.reset-button', '--color-raised'], ['.icon-button.selected', '--color-accent-soft'],
+    ])
+    checkModules(settingsModules)
+    await page.locator('.back-button').hover()
+    const backHoverModules = await themedModules([['.back-button', '--color-border']])
+    checkModules(backHoverModules)
+    await page.locator('.close-button').hover()
+    const closeHoverModules = await themedModules([['.close-button', '--color-danger-soft']])
+    checkModules(closeHoverModules)
+    await page.locator('.settings-panel h1').hover()
+    const switchModules = await themedModules([['.switch:not(:checked)', '--color-border'], ['.switch:checked', '--color-accent']])
+    checkModules(switchModules, false)
+    if (hex === '#95d5b2') {
+      await page.locator('#background-color').scrollIntoViewIfNeeded()
+      await page.screenshot({ path: resolve(artifactDir, 'theme-settings.png'), omitBackground: true })
+    }
     await page.getByRole('button', { name: '返回清单', exact: true }).click()
     await showPending()
     await page.locator('.list-heading h1').hover()
@@ -222,6 +275,20 @@ try {
     expect(contrast(pendingColors.text, pendingColors.background)).toBeGreaterThanOrEqual(4.5)
     expect(contrast(pendingColors.time, pendingColors.background)).toBeGreaterThanOrEqual(4.5)
     expect(contrast(pendingColors.icon, pendingColors.background)).toBeGreaterThanOrEqual(3)
+    const listModules = await themedModules([
+      ['.list-heading h1', '--color-surface'], ['.count-label', '--color-surface'],
+      ['.task-tab', '--color-surface'], ['#new-todo', '--color-raised'],
+      ['.composer .priority-select', '--color-accent-soft'], ['.deadline-toggle', '--color-surface'],
+      ['.reminder-toggle', '--color-surface'], ['.widget-footer > span', '--color-surface'],
+    ])
+    checkModules(listModules)
+    await page.locator('#new-todo').fill('配色验收草稿')
+    const primaryModules = await themedModules([['.add-button', '--color-accent']])
+    checkModules(primaryModules)
+    await page.locator('.add-button').hover()
+    const hoverModules = await themedModules([['.add-button', '--color-accent-hover']])
+    checkModules(hoverModules)
+    await page.locator('#new-todo').fill('')
     if (hex === '#000000') {
       await page.getByRole('button', { name: '编辑：完成窗口验收', exact: true }).click()
       const editorColors = await page.locator('.edit-form').evaluate(form => {
@@ -247,7 +314,7 @@ try {
       expect(contrast(warningColors.text, warningColors.background)).toBeGreaterThanOrEqual(4.5)
       await page.getByRole('button', { name: '取消', exact: true }).click()
     }
-    report.taskColorContrast.push({ hex, pending: pendingColors, completed: completedColors })
+    report.taskColorContrast.push({ hex, pending: pendingColors, completed: completedColors, settingsModules, listModules, primaryModules, hoverModules, switchModules, backHoverModules, closeHoverModules })
     await showPending()
     if (hex === '#95d5b2') await page.screenshot({ path: resolve(artifactDir, 'task-background-color.png'), omitBackground: true })
     await page.getByRole('button', { name: '窗口设置', exact: true }).click()
@@ -288,7 +355,7 @@ try {
   await expect(page.locator('.todo-text')).toHaveText(['整理今天的三件重点'])
   await expect(page.getByRole('checkbox', { name: '恢复：整理今天的三件重点', exact: true })).toBeChecked()
   await expect(page.locator('time')).toHaveAttribute('datetime', originalCreatedAt)
-  report.checks.push('New tasks show local creation time; editing, completing, restoring, ordering and full restart retain the original millisecond timestamp')
+  report.checks.push(themeOnly ? 'Full process restart retains the original creation timestamps of the synthetic tasks' : 'New tasks show local creation time; editing, completing, restoring, ordering and full restart retain the original millisecond timestamp')
   report.restoredWindow = measure()
   for (const key of ['x', 'y', 'width', 'height']) expect(report.restoredWindow[key]).toBe(beforeRestart[key])
   expect(report.restoredWindow.topmost).toBe(false)
@@ -313,6 +380,8 @@ try {
   await page.getByRole('button', { name: '返回清单', exact: true }).click()
   await showPending()
   await saveSettled()
+
+  if (themeOnly) { await finish(); return }
 
   const priorities = ['p0', 'p1', 'p2', 'p3']
   const fixtureText = (priority) => `优先级验收 ${priority.toUpperCase()}`
@@ -684,6 +753,10 @@ try {
   }
   await page.locator('.deadline-toggle').click()
   report.checks.push('Expanded composer remains usable at the minimum 320px height with no tab overlap or clipped footer')
+  await finish()
+}
+
+async function finish() {
   expect(report.errors).toEqual([])
   report.passed = true
   if (keepOpen) {
@@ -697,6 +770,10 @@ try {
     await browser.close().catch(() => {})
     browser = undefined
   } else { await close() }
+}
+
+try {
+  await run()
 } catch (error) {
   report.passed = false
   report.errors.push(String(error?.stack ?? error))
