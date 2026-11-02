@@ -82,17 +82,30 @@ async function saveSettled() { await expect(page.getByText('已保存在本机',
 async function showPending() { await page.getByRole('tab', { name: /^待完成/ }).click() }
 async function showCompleted() { await page.getByRole('tab', { name: /^已完成/ }).click() }
 
+async function clickRowButton(button) {
+  await button.scrollIntoViewIfNeeded()
+  await button.locator('xpath=ancestor::li[1]').hover({ position: { x: 12, y: 12 } })
+  await button.click()
+}
+
+async function toggleComposer(selector) {
+  await page.locator('#new-todo').focus()
+  await page.locator(selector).click()
+}
+
 async function themedModules(selectors) {
   return page.evaluate(selectors => {
     const widget = document.querySelector('.widget'), theme = getComputedStyle(widget)
     const role = name => {
+      if (name === 'transparent') return 'rgba(0, 0, 0, 0)'
       const probe = document.createElement('span')
       probe.style.backgroundColor = theme.getPropertyValue(name.replace('--color-', '--background-')).trim()
       return probe.style.backgroundColor
     }
     return selectors.map(([selector, name]) => {
       const element = document.querySelector(selector), style = getComputedStyle(element)
-      return { selector, expected: role(name), background: style.backgroundColor, text: style.color, opacity: style.opacity }
+      return { selector, expected: role(name), inherited: name === 'transparent', canvas: theme.backgroundColor,
+        background: style.backgroundColor, text: style.color, opacity: style.opacity }
     })
   }, selectors)
 }
@@ -100,7 +113,7 @@ async function themedModules(selectors) {
 function checkModules(samples, checkText = true) {
   for (const sample of samples) {
     expect(sample.background, sample.selector).toBe(sample.expected)
-    if (checkText) expect(contrast(sample.text, sample.background), sample.selector).toBeGreaterThanOrEqual(4.5)
+    if (checkText) expect(contrast(sample.text, sample.inherited ? sample.canvas : sample.background), sample.selector).toBeGreaterThanOrEqual(4.5)
   }
 }
 
@@ -158,7 +171,7 @@ async function run() {
     expect(Math.abs(Date.parse(originalCreatedAt) - Date.now())).toBeLessThan(60_000)
     await expect(page.locator('.todo-item').first().locator('time')).toHaveText(/^\d{2}\/\d{2}\s\d{2}:\d{2}$/)
     await expect(page.locator('.todo-item').first().locator('time')).toHaveAttribute('aria-label', /^添加于 /)
-    await page.getByRole('button', { name: '编辑：整理今天的重点', exact: true }).click()
+    await clickRowButton(page.getByRole('button', { name: '编辑：整理今天的重点', exact: true }))
     await page.getByRole('textbox', { name: '编辑待办内容', exact: true }).fill('整理今天的三件重点')
     await page.getByRole('textbox', { name: '编辑待办内容', exact: true }).press('Enter')
     await page.getByRole('checkbox', { name: '完成：整理今天的三件重点', exact: true }).click()
@@ -171,12 +184,14 @@ async function run() {
     await page.getByRole('checkbox', { name: '恢复：整理今天的三件重点', exact: true }).click()
     await expect(page.getByText('还没有已完成任务', { exact: true })).toBeVisible()
     await showPending()
-    await page.getByRole('button', { name: '删除：待删除的验收任务', exact: true }).click()
+    await clickRowButton(page.getByRole('button', { name: '删除：待删除的验收任务', exact: true }))
     await page.getByRole('button', { name: /^排序：完成窗口验收/ }).press('Alt+ArrowUp')
     await expect(page.locator('.todo-text')).toHaveText(['完成窗口验收', '整理今天的三件重点'])
-    await page.locator('.sort-handle').nth(0).dragTo(page.locator('.sort-handle').nth(1))
+    await page.locator('.todo-item').first().hover()
+    await page.locator('.sort-handle').nth(0).dragTo(page.locator('.todo-item').nth(1))
     await expect(page.locator('.todo-text')).toHaveText(['整理今天的三件重点', '完成窗口验收'])
-    await page.locator('.sort-handle').nth(0).dragTo(page.locator('.sort-handle').nth(1))
+    await page.locator('.todo-item').first().hover()
+    await page.locator('.sort-handle').nth(0).dragTo(page.locator('.todo-item').nth(1))
     await expect(page.locator('.todo-text')).toHaveText(['完成窗口验收', '整理今天的三件重点'])
     await page.getByRole('checkbox', { name: '完成：整理今天的三件重点', exact: true }).click()
     await expect(page.locator('.todo-text')).toHaveText(['完成窗口验收'])
@@ -184,6 +199,36 @@ async function run() {
     await page.screenshot({ path: resolve(artifactDir, 'tasks.png'), omitBackground: true })
     report.checks.push('Native WebView2: add, edit, automatic completion grouping, restore, delete, drag sorting and keyboard sorting')
   }
+
+  // Resting view stays quiet; focus, drafts and keyboard navigation reveal tools.
+  await page.getByRole('tab', { name: /^待完成/ }).focus()
+  await expect(page.locator('.composer-options')).toBeHidden()
+  await page.locator('#new-todo').focus()
+  await expect(page.locator('.composer-options')).toBeVisible()
+  await page.locator('#new-todo').fill('保留新增选项的草稿')
+  await page.getByRole('tab', { name: /^待完成/ }).focus()
+  await expect(page.locator('.composer-options')).toBeVisible()
+  await page.locator('#new-todo').fill('')
+  await page.getByRole('tab', { name: /^待完成/ }).focus()
+  await expect(page.locator('.composer-options')).toBeHidden()
+  await page.locator('.widget-header').hover()
+  const firstRow = page.locator('.todo-item').first()
+  const rowActions = firstRow.locator('.todo-actions .row-button').first()
+  await expect(rowActions).toHaveCSS('opacity', '0')
+  await expect(firstRow.locator('.deadline-unset')).toHaveCSS('opacity', '0')
+  const restingTextBounds = await firstRow.locator('.todo-text').boundingBox()
+  await firstRow.hover()
+  await expect(rowActions).toHaveCSS('opacity', '1')
+  await expect(firstRow.locator('.deadline-unset')).toHaveCSS('opacity', '1')
+  expect(await firstRow.locator('.todo-text').boundingBox()).toEqual(restingTextBounds)
+  await page.locator('.widget-header').hover()
+  await firstRow.locator('.sort-handle').focus()
+  await expect(rowActions).toHaveCSS('opacity', '1')
+  await expect(firstRow.locator('.sort-handle')).toHaveCSS('opacity', '1')
+  await page.getByRole('tab', { name: /^待完成/ }).focus()
+  await page.getByRole('tab', { name: /^待完成/ }).evaluate(button => button.blur())
+  await page.screenshot({ path: resolve(artifactDir, 'quiet-default.png'), omitBackground: true })
+  report.checks.push('Empty composer tools collapse, focus reveals them, drafts preserve them; row actions reveal on hover or keyboard focus without shifting text')
 
   await page.getByRole('button', { name: '窗口设置', exact: true }).click()
   report.alpha20 = await opacity(20, 'opacity-20.png')
@@ -244,8 +289,8 @@ async function run() {
     await saveSettled()
     await page.locator('.settings-panel h1').hover()
     const settingsModules = await themedModules([
-      ['.settings-panel', '--color-surface'], ['.drag-area', '--color-surface'],
-      ['.close-button', '--color-surface'], ['#background-color', '--color-raised'],
+      ['.settings-panel', 'transparent'], ['.drag-area', 'transparent'],
+      ['.close-button', 'transparent'], ['#background-color', '--color-raised'],
       ['.reset-button', '--color-raised'], ['.icon-button.selected', '--color-accent-soft'],
     ])
     checkModules(settingsModules)
@@ -264,24 +309,25 @@ async function run() {
     }
     await page.getByRole('button', { name: '返回清单', exact: true }).click()
     await showPending()
-    await page.locator('.list-heading h1').hover()
+    await page.locator('.widget-header').hover()
     const pendingColors = await page.locator('.todo-item').first().evaluate(item => ({
-      background: getComputedStyle(item).backgroundColor,
+      background: getComputedStyle(document.querySelector('.widget')).backgroundColor,
+      surface: getComputedStyle(item).backgroundColor,
       text: getComputedStyle(item.querySelector('.todo-text')).color,
       time: getComputedStyle(item.querySelector('.todo-created')).color,
       icon: getComputedStyle(item.querySelector('.row-button:not(.selected)')).color,
       opacity: getComputedStyle(item).opacity,
     }))
     expect(pendingColors.background).toBe(expected)
+    expect(pendingColors.surface).toBe('rgba(0, 0, 0, 0)')
     expect(pendingColors.opacity).toBe('1')
     expect(contrast(pendingColors.text, pendingColors.background)).toBeGreaterThanOrEqual(4.5)
     expect(contrast(pendingColors.time, pendingColors.background)).toBeGreaterThanOrEqual(4.5)
     expect(contrast(pendingColors.icon, pendingColors.background)).toBeGreaterThanOrEqual(3)
     const listModules = await themedModules([
-      ['.list-heading h1', '--color-surface'], ['.count-label', '--color-surface'],
-      ['.task-tab', '--color-surface'], ['#new-todo', '--color-raised'],
-      ['.composer .priority-select', '--color-accent-soft'], ['.deadline-toggle', '--color-surface'],
-      ['.reminder-toggle', '--color-surface'], ['.widget-footer > span', '--color-surface'],
+      ['.drag-area', 'transparent'], ['.task-tab', 'transparent'], ['#new-todo', '--color-raised'],
+      ['.composer .priority-select', '--color-accent-soft'], ['.deadline-toggle', 'transparent'],
+      ['.reminder-toggle', 'transparent'], ['.widget-footer > span', 'transparent'],
     ])
     checkModules(listModules)
     await page.locator('#new-todo').fill('配色验收草稿')
@@ -292,24 +338,24 @@ async function run() {
     checkModules(hoverModules)
     await page.locator('#new-todo').fill('')
     if (hex === '#000000') {
-      await page.getByRole('button', { name: '编辑：完成窗口验收', exact: true }).click()
+      await clickRowButton(page.getByRole('button', { name: '编辑：完成窗口验收', exact: true }))
       const editorColors = await page.locator('.edit-form').evaluate(form => {
         const textarea = getComputedStyle(form.querySelector('textarea'))
         const legend = getComputedStyle(form.querySelector('.deadline-editor legend'))
         return [[textarea.color, textarea.backgroundColor], [legend.color, legend.backgroundColor],
-          [getComputedStyle(form.querySelector('.edit-actions .hint')).color, getComputedStyle(form.closest('.todo-item')).backgroundColor]]
+          [getComputedStyle(form.querySelector('.edit-actions .hint')).color, getComputedStyle(document.querySelector('.widget')).backgroundColor]]
       })
       for (const [foreground, background] of editorColors) expect(contrast(foreground, background)).toBeGreaterThanOrEqual(4.5)
       await page.getByRole('button', { name: '取消编辑', exact: true }).click()
     }
     await showCompleted()
     const completedColors = await page.locator('.todo-item').first().evaluate(item => ({
-      background: getComputedStyle(item).backgroundColor, text: getComputedStyle(item.querySelector('.todo-text')).color,
+      background: getComputedStyle(document.querySelector('.widget')).backgroundColor, text: getComputedStyle(item.querySelector('.todo-text')).color,
     }))
     expect(completedColors.background).toBe(expected)
     expect(contrast(completedColors.text, completedColors.background)).toBeGreaterThanOrEqual(4.5)
     if (hex === '#000000') {
-      await page.getByRole('button', { name: '永久删除：整理今天的三件重点', exact: true }).click()
+      await clickRowButton(page.getByRole('button', { name: '永久删除：整理今天的三件重点', exact: true }))
       const warningColors = await page.locator('.delete-confirmation p').evaluate(element => ({
         text: getComputedStyle(element).color, background: getComputedStyle(element).backgroundColor,
       }))
@@ -328,24 +374,24 @@ async function run() {
     await opacity(percent, `modules-settings-${percent}.png`)
     await page.locator('.settings-panel h1').hover()
     const settingsModules = await themedModules([
-      ['.settings-panel', '--color-surface'], ['#background-color', '--color-raised'],
+      ['.settings-panel', 'transparent'], ['#background-color', '--color-raised'],
       ['.reset-button', '--color-raised'], ['.switch:not(:checked)', '--color-border'],
       ['.switch:checked', '--color-accent'],
     ])
     await page.getByRole('button', { name: '返回清单', exact: true }).click()
     await showPending()
-    await page.locator('.list-heading h1').hover()
+    await page.locator('.widget-header').hover()
     await page.locator('#new-todo').fill('透明度验收草稿')
     const listModules = await themedModules([
-      ['.todo-item', '--color-surface'], ['.drag-area', '--color-surface'], ['.task-tab', '--color-surface'],
+      ['.todo-item', 'transparent'], ['.drag-area', 'transparent'], ['.task-tab', 'transparent'],
       ['#new-todo', '--color-raised'], ['.composer .priority-select', '--color-accent-soft'],
-      ['.add-button', '--color-accent'], ['.deadline-toggle', '--color-surface'],
-      ['.reminder-toggle', '--color-surface'], ['.widget-footer > span', '--color-surface'],
+      ['.add-button', '--color-accent'], ['.deadline-toggle', 'transparent'],
+      ['.reminder-toggle', 'transparent'], ['.widget-footer > span', 'transparent'],
     ])
     checkModules([...settingsModules, ...listModules], false)
     for (const sample of [...settingsModules, ...listModules]) {
       const channels = sample.background.match(/[\d.]+/g).map(Number)
-      expect(channels.length === 4 ? channels[3] : 1, sample.selector).toBe(percent / 100)
+      expect(channels.length === 4 ? channels[3] : 1, sample.selector).toBe(sample.inherited ? 0 : percent / 100)
       expect(sample.opacity, sample.selector).toBe('1')
       expect(sample.text.startsWith('rgb(') || sample.text.endsWith(', 1)')).toBe(true)
     }
@@ -362,12 +408,12 @@ async function run() {
     const pixels = JSON.parse(execFileSync(python, ['-c',
       'import json,sys; from PIL import Image; im=Image.open(sys.argv[1]).convert("RGBA"); p=json.loads(sys.argv[2]); print(json.dumps({"cardAlpha":im.getpixel(tuple(p["card"]))[3],"textHasOpaquePixels":any(a==255 for *rgb,a in im.crop(tuple(p["text"])).getdata())}))',
       imagePath, JSON.stringify(points)], { encoding: 'utf8' }))
-    expect(Math.abs(pixels.cardAlpha - Math.round((1 - (1 - percent / 100) ** 2) * 255))).toBeLessThanOrEqual(2)
+    expect(Math.abs(pixels.cardAlpha - Math.round(percent / 100 * 255))).toBeLessThanOrEqual(2)
     expect(pixels.textHasOpaquePixels).toBe(true)
     report.moduleOpacity.push({ percent, settingsModules, listModules, pixels })
     await page.getByRole('button', { name: '窗口设置', exact: true }).click()
   }
-  report.checks.push('At 20%, 55% and 100%, card, panel, input, tab, button and switch backgrounds share the chosen alpha; all module and foreground opacity stays 1; restarting restores translucent cards')
+  report.checks.push('At 20%, 55% and 100%, flat rows and ghost controls inherit the translucent window; input and active control backgrounds share its alpha; text stays opaque and restart restores appearance')
   await page.locator('#always-on-top').uncheck()
   await saveSettled()
   expect(measure().topmost).toBe(false)
@@ -409,7 +455,7 @@ async function run() {
   expect(report.restoredWindow.resizable).toBe(false)
   const restoredAlpha = await page.locator('.widget').evaluate((element) => getComputedStyle(element).backgroundColor)
   expect(restoredAlpha).toBe('rgba(149, 213, 178, 0.2)')
-  await expect(page.locator('.todo-item')).toHaveCSS('background-color', 'rgba(149, 213, 178, 0.2)')
+  await expect(page.locator('.todo-item')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
   await expect(page.locator('.todo-item')).toHaveCSS('opacity', '1')
   report.checks.push('Full process restart restores text, completion, order, opacity, topmost, lock and window geometry from Tauri Store')
   await page.screenshot({ path: resolve(artifactDir, 'restarted.png'), omitBackground: true })
@@ -441,11 +487,11 @@ async function run() {
     await expect(taskRow(fixtureText(priority)).locator('.priority-badge')).toHaveAttribute('data-priority', priority)
     await expect(page.getByLabel('新增待办优先级', { exact: true })).toHaveValue('p2')
   }
-  await page.getByRole('button', { name: `编辑：${fixtureText('p0')}`, exact: true }).click()
+  await clickRowButton(page.getByRole('button', { name: `编辑：${fixtureText('p0')}`, exact: true }))
   await page.getByLabel('编辑待办优先级', { exact: true }).selectOption('p3')
   await page.getByRole('button', { name: '取消编辑', exact: true }).click()
   await expect(taskRow(fixtureText('p0')).locator('.priority-badge')).toHaveAttribute('data-priority', 'p0')
-  await page.getByRole('button', { name: `编辑：${fixtureText('p0')}`, exact: true }).click()
+  await clickRowButton(page.getByRole('button', { name: `编辑：${fixtureText('p0')}`, exact: true }))
   await page.getByLabel('编辑待办优先级', { exact: true }).selectOption('p1')
   await page.getByRole('button', { name: '保存编辑', exact: true }).click()
   await saveSettled()
@@ -464,7 +510,7 @@ async function run() {
   await expect(taskRow(legacyText).locator('.priority-badge')).toHaveAttribute('data-priority', 'p2')
   await expect(taskRow(legacyText).locator('.todo-created')).toHaveText('添加时间未知')
   await expect(page.getByRole('checkbox', { name: `恢复：${legacyText}`, exact: true })).toBeChecked()
-  await page.getByRole('button', { name: `编辑：${legacyText}`, exact: true }).click()
+  await clickRowButton(page.getByRole('button', { name: `编辑：${legacyText}`, exact: true }))
   await page.getByLabel('编辑待办优先级', { exact: true }).selectOption('p0')
   await page.getByRole('button', { name: '保存编辑', exact: true }).click()
   await saveSettled()
@@ -479,16 +525,16 @@ async function run() {
   await expect(taskRow(legacyText).locator('.priority-badge')).toHaveAttribute('data-priority', 'p0')
   report.checks.push('P0–P3 add/edit/cancel and full-process restart persist priorities; legacy tasks default to P2 while retaining text, completion and order')
 
-  await page.getByRole('button', { name: `永久删除：${legacyText}`, exact: true }).click()
+  await clickRowButton(page.getByRole('button', { name: `永久删除：${legacyText}`, exact: true }))
   await expect(page.getByText('永久删除这条已完成任务？删除后无法恢复。', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: '取消', exact: true })).toBeFocused()
   await page.getByRole('button', { name: '取消', exact: true }).press('Escape')
   await expect(taskRow(legacyText).locator('.priority-badge')).toHaveAttribute('data-priority', 'p0')
-  await page.getByRole('button', { name: `永久删除：${legacyText}`, exact: true }).click()
+  await clickRowButton(page.getByRole('button', { name: `永久删除：${legacyText}`, exact: true }))
   await page.getByRole('button', { name: '取消', exact: true }).click()
   await saveSettled()
   expect(JSON.parse(readFileSync(storePath, 'utf8')).todos.some((todo) => todo.id === 'legacy-priority-fixture')).toBe(true)
-  await page.getByRole('button', { name: `永久删除：${legacyText}`, exact: true }).click()
+  await clickRowButton(page.getByRole('button', { name: `永久删除：${legacyText}`, exact: true }))
   await page.screenshot({ path: resolve(artifactDir, 'delete-confirmation.png'), omitBackground: true })
   await page.getByRole('button', { name: '确认永久删除', exact: true }).click()
   await saveSettled()
@@ -509,13 +555,13 @@ async function run() {
   await expect(page.locator('.todo-text').first()).toHaveText('完成窗口验收')
   report.checks.push('Keyboard sorting skips completed records in Store and reorders visible pending tasks')
   for (const text of priorities.map(fixtureText)) {
-    await page.getByRole('button', { name: `删除：${text}`, exact: true }).click()
+    await clickRowButton(page.getByRole('button', { name: `删除：${text}`, exact: true }))
   }
-  await page.getByRole('button', { name: '编辑：完成窗口验收', exact: true }).click()
+  await clickRowButton(page.getByRole('button', { name: '编辑：完成窗口验收', exact: true }))
   await page.getByLabel('编辑待办优先级', { exact: true }).selectOption('p0')
   await page.getByRole('button', { name: '保存编辑', exact: true }).click()
   await showCompleted()
-  await page.getByRole('button', { name: '编辑：整理今天的三件重点', exact: true }).click()
+  await clickRowButton(page.getByRole('button', { name: '编辑：整理今天的三件重点', exact: true }))
   await page.getByLabel('编辑待办优先级', { exact: true }).selectOption('p1')
   await page.getByRole('button', { name: '保存编辑', exact: true }).click()
   await saveSettled()
@@ -543,7 +589,7 @@ async function run() {
   }) }
   report.priorityLayout = await measureLayout()
   await showCompleted()
-  await page.getByRole('button', { name: '永久删除：整理今天的三件重点', exact: true }).click()
+  await clickRowButton(page.getByRole('button', { name: '永久删除：整理今天的三件重点', exact: true }))
   report.completedLayout = await measureLayout()
   await page.getByRole('button', { name: '取消', exact: true }).click()
   await showPending()
@@ -567,7 +613,7 @@ async function run() {
   }
   async function addDeadlineTask(text, timestamp) {
     await page.getByLabel('新增待办', { exact: true }).fill(text)
-    await page.locator('.deadline-toggle').click()
+    await toggleComposer('.deadline-toggle')
     await enterDeadline(timestamp, 'new-deadline')
     await page.getByRole('button', { name: '添加待办', exact: true }).click()
     await saveSettled()
@@ -580,11 +626,11 @@ async function run() {
   let deadlineTask = await addDeadlineTask(deadlineText, Date.now() + 2 * 86_400_000)
   await expect(taskRow(deadlineText).locator('.deadline-badge')).toHaveClass(/deadline-neutral/)
   const initialDueAt = deadlineTask.dueAt
-  await taskRow(deadlineText).locator('.deadline-badge').click()
+  await clickRowButton(taskRow(deadlineText).locator('.deadline-badge'))
   await enterDeadline(Date.now() - 3_600_000, `deadline-${deadlineTask.id}`)
   await page.getByRole('button', { name: '取消编辑', exact: true }).click()
   expect(readStore().todos.find((todo) => todo.id === deadlineTask.id).dueAt).toBe(initialDueAt)
-  await taskRow(deadlineText).locator('.deadline-badge').click()
+  await clickRowButton(taskRow(deadlineText).locator('.deadline-badge'))
   await enterDeadline(Date.now() + 12 * 3_600_000, `deadline-${deadlineTask.id}`)
   report.deadlineEditorLayout = await measureLayout()
   await page.getByRole('button', { name: '保存编辑', exact: true }).click()
@@ -598,12 +644,12 @@ async function run() {
   await expect(taskRow(overdueText).locator('.deadline-badge')).toHaveClass(/deadline-overdue/)
   await page.screenshot({ path: resolve(artifactDir, 'deadlines.png'), omitBackground: true })
   report.deadlineLayout = await measureLayout()
-  await page.locator('.deadline-toggle').click()
+  await toggleComposer('.deadline-toggle')
   await page.locator('#new-deadline-date').fill(parts(Date.now() + 86_400_000).date)
   await expect(page.locator('#new-deadline-time')).toHaveValue('23:59')
   report.composerDeadlineLayout = await measureLayout()
   await page.getByRole('button', { name: '清除 DDL', exact: true }).click()
-  await page.locator('.deadline-toggle').click()
+  await toggleComposer('.deadline-toggle')
   for (const layout of [...report.deadlineLayout, ...report.deadlineEditorLayout, ...report.composerDeadlineLayout]) {
     expect(layout.overflow).toBe(false)
     expect(layout.metadataSingleLine).toBe(true)
@@ -621,7 +667,7 @@ async function run() {
   await page.getByRole('checkbox', { name: `恢复：${shortText}`, exact: true }).click()
   await showPending()
   expect(readStore().todos.find((todo) => todo.id === shortTask.id).dueAt).toBe(shortTask.dueAt)
-  await taskRow(shortText).locator('.deadline-badge').click()
+  await clickRowButton(taskRow(shortText).locator('.deadline-badge'))
   await page.getByRole('button', { name: '清除 DDL', exact: true }).click()
   await page.getByRole('button', { name: '保存编辑', exact: true }).click()
   await saveSettled()
@@ -632,14 +678,14 @@ async function run() {
   // Native scheduler: an isolated, synthetic task with a real near-future DDL.
   // Other fixture deadlines are cleared before enabling automatic reminders.
   for (const text of [deadlineText, overdueText]) {
-    await taskRow(text).locator('.deadline-badge').click()
+    await clickRowButton(taskRow(text).locator('.deadline-badge'))
     await page.getByRole('button', { name: '清除 DDL', exact: true }).click()
     await page.getByRole('button', { name: '保存编辑', exact: true }).click()
   }
   // Explicit reminder times work even when automatic DDL notifications are off.
   const customText = '指定时间提醒验收（测试任务）'
   await page.getByLabel('新增待办', { exact: true }).fill(customText)
-  await page.locator('.reminder-toggle').click()
+  await toggleComposer('.reminder-toggle')
   await page.locator('#new-reminder-date').fill(parts(Date.now() - 86_400_000).date)
   await expect(page.getByText('提醒时间需要晚于当前时间。', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: '添加待办', exact: true })).toBeDisabled()
@@ -654,12 +700,12 @@ async function run() {
   await expect(page.locator('.reminder-toggle')).toHaveAttribute('aria-expanded', 'false')
   await expect(page.locator('#new-reminder-date')).toHaveValue('')
   const customBell = () => page.getByRole('button', { name: `设置提醒：${customText}`, exact: true })
-  await customBell().click()
+  await clickRowButton(customBell())
   await expect(page.locator(`#reminder-${customTask.id}-date`)).toBeFocused()
   await enterDeadline(Date.now() + 2 * 3_600_000, `reminder-${customTask.id}`)
   await page.getByRole('button', { name: '取消编辑', exact: true }).click()
   expect(readStore().todos.find(todo => todo.id === customTask.id).remindAt).toBe(customTask.remindAt)
-  await customBell().click()
+  await clickRowButton(customBell())
   await enterDeadline(Date.now() + 3_600_000, `reminder-${customTask.id}`)
   report.customEditorLayout = await measureLayout()
   await page.getByRole('button', { name: '保存编辑', exact: true }).click()
@@ -707,14 +753,14 @@ async function run() {
   await close()
   await launch()
   expect(readStore().taskReminders[customTask.id]).toBe(rearmedCustomTime)
-  await customBell().click()
+  await clickRowButton(customBell())
   await page.getByRole('button', { name: '清除提醒', exact: true }).click()
   await page.getByRole('button', { name: '清除 DDL', exact: true }).click()
   await page.getByRole('button', { name: '保存编辑', exact: true }).click()
   await saveSettled()
   expect(readStore().taskReminders[customTask.id]).toBeUndefined()
   expect(readStore().todos.find(todo => todo.id === customTask.id).remindAt).toBeUndefined()
-  await page.getByRole('button', { name: `删除：${customText}`, exact: true }).click()
+  await clickRowButton(page.getByRole('button', { name: `删除：${customText}`, exact: true }))
   await saveSettled()
   expect(readStore().todos.some(todo => todo.id === customTask.id)).toBe(false)
   for (const layout of [...report.customComposerLayout, ...report.customEditorLayout]) {
@@ -746,7 +792,7 @@ async function run() {
   expect(readStore().deadlineReminders[reminderTask.id]).toEqual({ dueAt: reminderTask.dueAt, stage: 2 })
   await page.getByRole('checkbox', { name: `完成：${reminderText}`, exact: true }).click()
   await showCompleted()
-  await taskRow(reminderText).locator('.deadline-badge').click()
+  await clickRowButton(taskRow(reminderText).locator('.deadline-badge'))
   await enterDeadline(Date.now() - 60_000, `deadline-${reminderTask.id}`)
   await page.getByRole('button', { name: '保存编辑', exact: true }).click()
   await saveSettled()
@@ -756,7 +802,7 @@ async function run() {
   await expect.poll(() => readStore().deadlineReminders?.[reminderTask.id]?.stage, { timeout: 25_000 }).toBe(2)
   await expect.poll(audioStarts).toBe(5)
   await showPending()
-  await taskRow(reminderText).locator('.deadline-badge').click()
+  await clickRowButton(taskRow(reminderText).locator('.deadline-badge'))
   await page.getByRole('button', { name: '清除 DDL', exact: true }).click()
   await page.getByRole('button', { name: '保存编辑', exact: true }).click()
   await saveSettled()
@@ -777,7 +823,7 @@ async function run() {
   await close()
   await launch()
   await page.screenshot({ path: resolve(artifactDir, 'deadlines-docs.png'), omitBackground: true })
-  await page.locator('.deadline-toggle').click()
+  await toggleComposer('.deadline-toggle')
   report.minimumHeightLayout = await page.evaluate(() => {
     const widget = document.querySelector('.widget')
     const originalWidth = widget.style.width, originalHeight = widget.style.height
@@ -798,7 +844,7 @@ async function run() {
     expect(layout.tabsDoNotOverlapComposer).toBe(true)
     expect(layout.overflow).toBe(false)
   }
-  await page.locator('.deadline-toggle').click()
+  await toggleComposer('.deadline-toggle')
   report.checks.push('Expanded composer remains usable at the minimum 320px height with no tab overlap or clipped footer')
   await finish()
 }

@@ -12,7 +12,7 @@ import { backgroundAppearance } from './services/appearance'
 import type { Settings } from './types'
 
 const model = useWidget()
-const { todos, settings, loading, saving, error, ready, remaining } = model
+const { todos, settings, loading, saving, error, ready } = model
 const settingsOpen = ref(false)
 const previewOpacity = ref<number>()
 const previewColor = ref<string>()
@@ -65,7 +65,7 @@ onBeforeUnmount(() => { unlistenClose?.(); unlistenReminders?.() })
         @update="updateSettings" @preview-opacity="previewOpacity = $event" @preview-color="previewColor = $event"
         @reset="model.runWindowAction(widgetService.resetPosition)" />
       <template v-else>
-        <section class="list-heading"><h1>待办清单</h1><span class="count-label">{{ remaining ? `${remaining} 件待完成` : todos.length ? '全部完成了' : '从一件小事开始' }}</span></section>
+        <h1 class="sr-only">待办清单</h1>
         <TodoList :todos="todos" @toggle="model.toggle" @edit="model.edit" @remove="model.remove" @reorder="model.move" @move="model.moveBy" />
         <TodoComposer :disabled="!ready" @add="model.add" />
       </template>

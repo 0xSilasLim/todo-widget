@@ -115,7 +115,7 @@ function editKey(event: KeyboardEvent) {
           :aria-label="`优先级：${todo.priority.toUpperCase()} ${PRIORITY_LABELS[todo.priority]}`">{{ todo.priority.toUpperCase() }}</span>
         <time v-if="createdDate" class="todo-created" :datetime="createdDate.toISOString()" :title="`添加于 ${fullCreatedTime}`" :aria-label="`添加于 ${fullCreatedTime}`"><Clock :size="14" aria-hidden="true" />{{ createdTime }}</time>
         <span v-else class="todo-created">添加时间未知</span>
-        <button class="deadline-badge" :class="`deadline-${deadline?.tone ?? 'neutral'}`" :aria-label="`设置截止时间：${todo.text}`"
+        <button class="deadline-badge" :class="[`deadline-${deadline?.tone ?? 'neutral'}`, { 'deadline-unset': !deadline }]" :aria-label="`设置截止时间：${todo.text}`"
           :aria-description="deadlineDetails" :title="deadlineDetails" @click="beginEdit('deadline')">
           <span v-if="deadline">{{ deadline.tone === 'overdue' ? '逾期' : 'DDL' }} {{ deadline.label }}</span>
           <span v-else>设置 DDL</span>

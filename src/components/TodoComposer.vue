@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { Bell, CalendarClock, Plus } from '@lucide/vue'
 import { DEFAULT_PRIORITY, MAX_TODO_LENGTH, type Priority } from '../types'
 import PrioritySelect from './PrioritySelect.vue'
@@ -18,6 +18,8 @@ const remindAt = ref<number | null>(null)
 const reminderOpen = ref(false)
 const reminderValid = ref(true)
 const reminderEditor = ref<InstanceType<typeof ReminderEditor>>()
+const expanded = computed(() => Boolean(draft.value.trim()) || priority.value !== DEFAULT_PRIORITY
+  || deadlineOpen.value || reminderOpen.value || dueAt.value != null || remindAt.value != null)
 
 function submit() {
   if (!draft.value.trim() || !deadlineValid.value || !reminderEditor.value?.validate()) return
@@ -34,16 +36,16 @@ function submit() {
 </script>
 
 <template>
-  <form class="composer" @submit.prevent="submit">
+  <form class="composer" :class="{ 'is-expanded': expanded }" @submit.prevent="submit">
     <div class="composer-inputs">
     <label class="sr-only" for="new-todo">新增待办</label>
     <input id="new-todo" v-model="draft" :disabled="disabled" :maxlength="MAX_TODO_LENGTH"
       autocomplete="off" placeholder="记下一件要做的事…" @keydown.enter="($event.isComposing || $event.keyCode === 229) && $event.preventDefault()" />
-    <PrioritySelect v-model="priority" label="新增待办优先级" :disabled="disabled" />
     <button class="primary-button add-button" type="submit" aria-label="添加待办" title="添加待办（Enter）"
       :disabled="disabled || !draft.trim() || !deadlineValid || !reminderValid"><Plus :size="20" /></button>
     </div>
-    <div class="composer-options"><button class="deadline-toggle" type="button" :disabled="disabled" :aria-expanded="deadlineOpen" aria-controls="composer-deadline"
+    <div class="composer-options"><PrioritySelect v-model="priority" label="新增待办优先级" :disabled="disabled" />
+    <button class="deadline-toggle" type="button" :disabled="disabled" :aria-expanded="deadlineOpen" aria-controls="composer-deadline"
       @click="deadlineOpen = !deadlineOpen"><CalendarClock :size="14" />{{ dueAt == null ? '设置 DDL' : '已设置 DDL' }}</button>
     <button class="reminder-toggle" :class="{ selected: remindAt != null }" type="button" :disabled="disabled" :aria-expanded="reminderOpen" aria-controls="composer-reminder"
       @click="reminderOpen = !reminderOpen"><Bell :size="14" />{{ remindAt == null ? '设置提醒' : `提醒 ${reminderStatus(remindAt, Date.now()).label}` }}</button></div>
