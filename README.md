@@ -4,6 +4,8 @@
 
 主界面采用平面列表，数量只在分类页签显示。悬停或用键盘聚焦任务时出现操作按钮；聚焦底部输入框后，再展开优先级、DDL 和提醒选项。已设置的提醒与截止时间保持可见。
 
+正文、输入框与页签使用 13px 字号，设置标题为 16px；优先级、添加时间和 DDL 保持 12px，兼顾轻量观感与时间信息的可读性。
+
 **[下载最新版](https://github.com/0xSilasLim/todo-widget/releases/latest)** · [使用方法](#使用方法) · [开发与构建](#开发与构建) · [验收记录](ACCEPTANCE.md)
 
 <img src="docs/images/widget.png" alt="Todo Widget：优先级、添加时间和 DDL 显示在同一行" width="320" />
