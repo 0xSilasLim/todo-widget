@@ -26,6 +26,8 @@
   --font-size-heading: 16px;
   --task-meta-font-size: 12px;
   --task-meta-line-height: 20px;
+  --task-action-width: 28px;
+  --task-action-height: 32px;
   --radius-small: 6px;
   --radius-window: 12px;
   --ease-feedback: cubic-bezier(.2, 0, .2, 1);
@@ -74,8 +76,9 @@ h1 { font-size: 22px; line-height: 1.3; font-weight: 650; margin: 0; letter-spac
 .todo-check input:checked + .check-mark { background: var(--background-accent); border-color: var(--color-accent); color: var(--color-on-accent); }
 .todo-text { display: block; min-width: 0; padding: 0 0 var(--space-1); line-height: 1.6; overflow-wrap: anywhere; user-select: text; }
 .completed .todo-text { color: var(--color-muted); text-decoration: line-through; }
-.todo-content { flex: 1; min-width: 0; padding: var(--space-1) 0 0; }
-.todo-content .todo-text { padding-bottom: 0; }
+.todo-content { position: relative; flex: 1; min-width: 0; padding: var(--space-1) 0 0; line-height: 1.6; }
+.todo-content .todo-text { display: inline; padding-bottom: 0; }
+.todo-content .todo-text::after { content: ''; display: inline-block; width: calc(3 * var(--task-action-width) + var(--space-2)); height: var(--task-action-height); vertical-align: top; }
 .todo-meta { display: flex; flex: 0 0 100%; min-width: 0; align-items: center; flex-wrap: nowrap; gap: var(--space-4); padding-bottom: var(--space-1); font-size: var(--task-meta-font-size); line-height: var(--task-meta-line-height); white-space: nowrap; }
 .todo-created { display: inline-flex; flex-shrink: 0; align-items: center; gap: var(--space-1); color: var(--color-muted); }
 .priority-badge { display: inline-block; flex-shrink: 0; padding: 0 var(--space-1); border-radius: var(--space-1); font-weight: 650; }
@@ -88,13 +91,13 @@ h1 { font-size: 22px; line-height: 1.3; font-weight: 650; margin: 0; letter-spac
 .priority-p3 { color: var(--color-muted); background: var(--background-surface); }
 .edit-priority { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); font-size: 12px; }
 .edit-priority .hint { margin: 0; }
-.todo-actions { display: flex; flex-shrink: 0; }
-.todo-actions .row-button:not(.selected), .sort-handle, .deadline-unset { opacity: 0; pointer-events: none; }
+.todo-actions { position: absolute; right: 0; bottom: 0; display: flex; }
+.todo-actions .row-button, .sort-handle, .deadline-unset { opacity: 0; pointer-events: none; }
 .todo-item:hover .todo-actions .row-button, .todo-item:focus-within .todo-actions .row-button,
 .todo-item:hover .sort-handle, .todo-item:focus-within .sort-handle,
 .todo-item:hover .deadline-unset, .todo-item:focus-within .deadline-unset { opacity: 1; pointer-events: auto; }
-@media (hover: none) { .todo-actions .row-button:not(.selected), .sort-handle, .deadline-unset { opacity: 1; pointer-events: auto; } }
-.row-button { width: 28px; height: 32px; padding: 0; color: var(--color-muted); border-radius: var(--radius-small); }
+@media (hover: none) { .todo-actions .row-button, .sort-handle, .deadline-unset { opacity: 1; pointer-events: auto; } }
+.row-button { width: var(--task-action-width); height: var(--task-action-height); padding: 0; color: var(--color-muted); border-radius: var(--radius-small); }
 .todo-item .field-error, .todo-item .delete-confirmation p { background: var(--background-danger-soft); }
 .edit-form { width: 100%; padding: var(--space-1); }
 textarea { width: 100%; min-height: 68px; resize: vertical; border: 1px solid var(--color-border); border-radius: var(--radius-small); padding: var(--space-2); color: var(--color-text); background: var(--background-raised); user-select: text; }
@@ -187,5 +190,5 @@ select option { color: var(--color-text); background: var(--color-raised); }
 .resize-NorthEast, .resize-NorthWest, .resize-SouthEast, .resize-SouthWest { width: 8px; height: 8px; }
 .resize-NorthEast { top: 0; right: 0; cursor: nesw-resize; }.resize-NorthWest { top: 0; left: 0; cursor: nwse-resize; }
 .resize-SouthEast { bottom: 0; right: 0; cursor: nwse-resize; }.resize-SouthWest { bottom: 0; left: 0; cursor: nesw-resize; }
-@media (max-width: 300px) { .widget-header { gap: 0; }.window-controls { gap: 0; }.drag-area { gap: var(--space-1); }.row-button { height: 24px; } }
+@media (max-width: 300px) { :root { --task-action-height: 24px; }.widget-header { gap: 0; }.window-controls { gap: 0; }.drag-area { gap: var(--space-1); } }
 @media (prefers-reduced-motion: reduce) { *, *::before { transition: none !important; } }

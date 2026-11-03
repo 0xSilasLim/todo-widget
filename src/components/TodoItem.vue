@@ -100,14 +100,14 @@ function editKey(event: KeyboardEvent) {
           @change="$emit('toggle', todo.id)" /><span class="check-mark"><Check v-if="todo.completed" :size="12" /></span></label>
       <div class="todo-content">
         <span class="todo-text" :title="todo.text" @dblclick="beginEdit()">{{ todo.text }}</span>
-      </div>
-      <div class="todo-actions">
-        <button class="row-button" :class="{ selected: todo.remindAt != null && !todo.completed }" :aria-label="`设置提醒：${todo.text}`"
-          :aria-description="reminderDetails" :title="reminderDetails" @click="beginEdit('reminder')"><BellRing v-if="todo.remindAt != null" :size="14" /><Bell v-else :size="14" /></button>
-        <button ref="editButton" class="row-button" :aria-label="`编辑：${todo.text}`" title="编辑（也可双击文字）"
-          @click="beginEdit()"><Pencil :size="14" /></button>
-        <button ref="deleteButton" class="row-button danger-button" :aria-label="`${todo.completed ? '永久删除' : '删除'}：${todo.text}`"
-          :title="todo.completed ? '永久删除' : '删除'" @click="requestRemove"><Trash2 :size="14" /></button>
+        <div class="todo-actions">
+          <button class="row-button" :class="{ selected: todo.remindAt != null && !todo.completed }" :aria-label="`设置提醒：${todo.text}`"
+            :aria-description="reminderDetails" :title="reminderDetails" @click="beginEdit('reminder')"><BellRing v-if="todo.remindAt != null" :size="14" /><Bell v-else :size="14" /></button>
+          <button ref="editButton" class="row-button" :aria-label="`编辑：${todo.text}`" title="编辑（也可双击文字）"
+            @click="beginEdit()"><Pencil :size="14" /></button>
+          <button ref="deleteButton" class="row-button danger-button" :aria-label="`${todo.completed ? '永久删除' : '删除'}：${todo.text}`"
+            :title="todo.completed ? '永久删除' : '删除'" @click="requestRemove"><Trash2 :size="14" /></button>
+        </div>
       </div>
       <div class="todo-meta">
         <span class="priority-badge" :class="`priority-${todo.priority}`" :data-priority="todo.priority"
