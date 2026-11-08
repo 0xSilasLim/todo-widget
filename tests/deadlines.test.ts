@@ -1,7 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import DeadlineEditor from '../src/components/DeadlineEditor.vue'
-import TodoComposer from '../src/components/TodoComposer.vue'
 import TodoItem from '../src/components/TodoItem.vue'
 import { DAY, HOUR, MINUTE, deadlineStatus, localDateParts, parseLocalDeadline } from '../src/services/deadlines'
 
@@ -63,18 +62,6 @@ describe('deadline controls', () => {
     await editor.findAll('button')[2].trigger('click')
     expect(editor.get<HTMLInputElement>('input[type="date"]').element.value).toBe('')
     expect(editor.emitted('update:modelValue')?.at(-1)).toEqual([null])
-  })
-
-  it('adds with a deadline and resets it for the next task', async () => {
-    const composer = mount(TodoComposer, { props: { disabled: false } })
-    await composer.get('.deadline-toggle').trigger('click')
-    await composer.get('input[type="date"]').setValue('2026-10-26')
-    await composer.get('input[type="time"]').setValue('18:00')
-    await composer.get('#new-todo').setValue('带 DDL 的任务')
-    await composer.get('form').trigger('submit')
-    expect(composer.emitted('add')).toEqual([['带 DDL 的任务', 'p2', parseLocalDeadline('2026-10-26', '18:00'), null]])
-    expect(composer.get('.deadline-toggle').attributes('aria-expanded')).toBe('false')
-    expect(composer.get<HTMLInputElement>('input[type="date"]').element.value).toBe('')
   })
 
   it('opens the task deadline editor directly, cancels without saving, and saves a cleared deadline', async () => {

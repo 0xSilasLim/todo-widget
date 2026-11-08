@@ -1,7 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ReminderEditor from '../src/components/ReminderEditor.vue'
-import TodoComposer from '../src/components/TodoComposer.vue'
 import TodoItem from '../src/components/TodoItem.vue'
 import { HOUR, MINUTE, localDateParts } from '../src/services/deadlines'
 import { nextReminderTime, reminderStatus } from '../src/services/reminders'
@@ -33,28 +32,14 @@ describe('custom reminder times', () => {
     expect(editor.emitted('validity')?.at(-1)).toEqual([true])
   })
 
-  it('adds without a deadline and resets the reminder for the next task', async () => {
-    const composer = mount(TodoComposer, { props: { disabled: false } })
-    await composer.get('.reminder-toggle').trigger('click')
-    await composer.get('.reminder-editor button').trigger('click')
-    await composer.get('#new-todo').setValue('定时阅读')
-    await composer.get('form').trigger('submit')
-    expect(composer.emitted('add')).toEqual([['定时阅读', 'p2', null, nextReminderTime()]])
-    expect(composer.get('.reminder-toggle').attributes('aria-expanded')).toBe('false')
-    expect(composer.get<HTMLInputElement>('#new-reminder-date').element.value).toBe('')
-    await composer.get('#new-todo').setValue('没有提醒的下一件事')
-    await composer.get('form').trigger('submit')
-    expect(composer.emitted('add')?.at(-1)).toEqual(['没有提醒的下一件事', 'p2', null, null])
-  })
-
   it('revalidates before saving if the clock has passed a newly selected time', async () => {
-    const composer = mount(TodoComposer, { props: { disabled: false } })
-    await composer.get('.reminder-editor button').trigger('click')
-    await composer.get('#new-todo').setValue('不能保存过期的新提醒')
+    const item = mount(TodoItem, { props: { todo: { id: 'one', text: '任务', completed: false, priority: 'p2' }, first: true, last: true, dragging: false } })
+    await item.get('[aria-label="设置提醒：任务"]').trigger('click')
+    await item.get('.reminder-editor button').trigger('click')
     vi.setSystemTime(now + HOUR)
-    await composer.get('form').trigger('submit')
-    expect(composer.emitted('add')).toBeUndefined()
-    expect(composer.text()).toContain('晚于当前时间')
+    await item.get('[aria-label="保存编辑"]').trigger('click')
+    expect(item.emitted('edit')).toBeUndefined()
+    expect(item.text()).toContain('晚于当前时间')
   })
 
   it('opens from the task bell, cancels without writing, and saves a cleared reminder', async () => {

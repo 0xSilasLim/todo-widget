@@ -92,11 +92,6 @@ async function clickRowButton(button) {
   await button.click()
 }
 
-async function toggleComposer(selector) {
-  await page.locator('#new-todo').focus()
-  await page.locator(selector).click()
-}
-
 async function themedModules(selectors) {
   return page.evaluate(selectors => {
     const widget = document.querySelector('.widget'), theme = getComputedStyle(widget)
@@ -203,17 +198,15 @@ async function run() {
     report.checks.push('Native WebView2: add, edit, automatic completion grouping, restore, delete, drag sorting and keyboard sorting')
   }
 
-  // Resting view stays quiet; focus, drafts and keyboard navigation reveal tools.
-  await page.getByRole('tab', { name: /^待完成/ }).focus()
-  await expect(page.locator('.composer-options')).toBeHidden()
+  // Focus and drafts keep the composer limited to text and the add button.
+  const composerBounds = await page.locator('.composer').boundingBox()
   await page.locator('#new-todo').focus()
-  await expect(page.locator('.composer-options')).toBeVisible()
-  await page.locator('#new-todo').fill('保留新增选项的草稿')
-  await page.getByRole('tab', { name: /^待完成/ }).focus()
-  await expect(page.locator('.composer-options')).toBeVisible()
+  await expect(page.locator('.composer-options, .composer .deadline-editor, .composer .reminder-editor')).toHaveCount(0)
+  await page.locator('#new-todo').fill('只输入任务文字的草稿')
+  await expect(page.locator('.composer button')).toHaveCount(1)
+  expect(await page.locator('.composer').boundingBox()).toEqual(composerBounds)
   await page.locator('#new-todo').fill('')
   await page.getByRole('tab', { name: /^待完成/ }).focus()
-  await expect(page.locator('.composer-options')).toBeHidden()
   await page.locator('.widget-header').hover()
   const firstRow = page.locator('.todo-item').first()
   const rowActions = firstRow.locator('.todo-actions .row-button')
@@ -237,7 +230,7 @@ async function run() {
   await page.getByRole('tab', { name: /^待完成/ }).focus()
   await page.getByRole('tab', { name: /^待完成/ }).evaluate(button => button.blur())
   await page.screenshot({ path: resolve(artifactDir, 'quiet-default.png'), omitBackground: true })
-  report.checks.push('Empty composer tools collapse, focus reveals them, drafts preserve them; text uses the full row width, all three trailing actions reveal on hover or keyboard focus without shifting text')
+  report.checks.push('Composer stays text-only with unchanged height through focus and drafts; text uses the full row width, all three trailing actions reveal on hover or keyboard focus without shifting text')
 
   await page.getByRole('button', { name: '窗口设置', exact: true }).click()
   report.alpha20 = await opacity(20, 'opacity-20.png')
@@ -333,8 +326,8 @@ async function run() {
     expect(contrast(pendingColors.icon, pendingColors.background)).toBeGreaterThanOrEqual(3)
     const listModules = await themedModules([
       ['.drag-area', 'transparent'], ['.task-tab', 'transparent'], ['#new-todo', '--color-raised'],
-      ['.deadline-toggle', 'transparent'],
-      ['.reminder-toggle', 'transparent'], ['.widget-footer', 'transparent'],
+
+       ['.widget-footer', 'transparent'],
     ])
     checkModules(listModules)
     await page.locator('#new-todo').fill('配色验收草稿')
@@ -392,8 +385,8 @@ async function run() {
     const listModules = await themedModules([
       ['.todo-item', 'transparent'], ['.drag-area', 'transparent'], ['.task-tab', 'transparent'],
       ['#new-todo', '--color-raised'],
-      ['.add-button', '--color-accent'], ['.deadline-toggle', 'transparent'],
-      ['.reminder-toggle', 'transparent'], ['.widget-footer', 'transparent'],
+      ['.add-button', '--color-accent'],
+       ['.widget-footer', 'transparent'],
     ])
     checkModules([...settingsModules, ...listModules], false)
     for (const sample of [...settingsModules, ...listModules]) {
@@ -587,14 +580,16 @@ async function run() {
   }
   async function addDeadlineTask(text, timestamp) {
     await page.getByLabel('新增待办', { exact: true }).fill(text)
-    await toggleComposer('.deadline-toggle')
-    await enterDeadline(timestamp, 'new-deadline')
     await page.getByRole('button', { name: '添加待办', exact: true }).click()
     await saveSettled()
-    const task = readStore().todos.find((todo) => todo.text === text)
-    expect(task.dueAt).toBe(Math.floor(timestamp / 60_000) * 60_000)
-    await expect(page.locator('.deadline-toggle')).toHaveAttribute('aria-expanded', 'false')
-    return task
+    const task = readStore().todos.find(todo => todo.text === text)
+    await clickRowButton(page.getByRole('button', { name: `编辑：${text}`, exact: true }))
+    await enterDeadline(timestamp, `deadline-${task.id}`)
+    await page.getByRole('button', { name: '保存编辑', exact: true }).click()
+    await saveSettled()
+    const updated = readStore().todos.find(todo => todo.id === task.id)
+    expect(updated.dueAt).toBe(Math.floor(timestamp / 60_000) * 60_000)
+    return updated
   }
   const deadlineText = 'DDL 验收：完成阅读与笔记'
   let deadlineTask = await addDeadlineTask(deadlineText, Date.now() + 2 * 86_400_000)
@@ -618,13 +613,13 @@ async function run() {
   await expect(taskRow(overdueText).locator('.deadline-badge')).toHaveClass(/deadline-overdue/)
   await page.screenshot({ path: resolve(artifactDir, 'deadlines.png'), omitBackground: true })
   report.deadlineLayout = await measureLayout()
-  await toggleComposer('.deadline-toggle')
-  await page.locator('#new-deadline-date').fill(parts(Date.now() + 86_400_000).date)
-  await expect(page.locator('#new-deadline-time')).toHaveValue('23:59')
-  report.composerDeadlineLayout = await measureLayout()
-  await page.getByRole('button', { name: '清除 DDL', exact: true }).click()
-  await toggleComposer('.deadline-toggle')
-  for (const layout of [...report.deadlineLayout, ...report.deadlineEditorLayout, ...report.composerDeadlineLayout]) {
+  await clickRowButton(page.getByRole('button', { name: '编辑：完成窗口验收', exact: true }))
+  const dateOnlyTask = readStore().todos.find(todo => todo.text === '完成窗口验收')
+  await page.locator(`#deadline-${dateOnlyTask.id}-date`).fill(parts(Date.now() + 86_400_000).date)
+  await expect(page.locator(`#deadline-${dateOnlyTask.id}-time`)).toHaveValue('23:59')
+  report.dateOnlyEditorLayout = await measureLayout()
+  await page.getByRole('button', { name: '取消编辑', exact: true }).click()
+  for (const layout of [...report.deadlineLayout, ...report.deadlineEditorLayout, ...report.dateOnlyEditorLayout]) {
     expect(layout.overflow).toBe(false)
     expect(layout.metadataSingleLine).toBe(true)
     expect(layout.controlsFit).toBe(true)
@@ -659,21 +654,22 @@ async function run() {
   // Explicit reminder times work even when automatic DDL notifications are off.
   const customText = '指定时间提醒验收（测试任务）'
   await page.getByLabel('新增待办', { exact: true }).fill(customText)
-  await toggleComposer('.reminder-toggle')
-  await page.locator('#new-reminder-date').fill(parts(Date.now() - 86_400_000).date)
-  await expect(page.getByText('提醒时间需要晚于当前时间。', { exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: '添加待办', exact: true })).toBeDisabled()
-  await page.locator('#composer-reminder').getByRole('button', { name: '10 分钟后', exact: true }).click()
-  report.customComposerLayout = await measureLayout()
   await page.getByRole('button', { name: '添加待办', exact: true }).click()
   await saveSettled()
   let customTask = readStore().todos.find(todo => todo.text === customText)
+  const customBell = () => page.getByRole('button', { name: `设置提醒：${customText}`, exact: true })
+  await clickRowButton(customBell())
+  await page.locator(`#reminder-${customTask.id}-date`).fill(parts(Date.now() - 86_400_000).date)
+  await expect(page.getByText('提醒时间需要晚于当前时间。', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '保存编辑', exact: true })).toBeDisabled()
+  await page.locator('.reminder-editor').getByRole('button', { name: '10 分钟后', exact: true }).click()
+  report.customInitialEditorLayout = await measureLayout()
+  await page.getByRole('button', { name: '保存编辑', exact: true }).click()
+  await saveSettled()
+  customTask = readStore().todos.find(todo => todo.id === customTask.id)
   expect(customTask.remindAt).toBeGreaterThan(Date.now())
   expect(customTask.dueAt).toBeUndefined()
   expect(readStore().settings.deadlineNotifications).toBe(false)
-  await expect(page.locator('.reminder-toggle')).toHaveAttribute('aria-expanded', 'false')
-  await expect(page.locator('#new-reminder-date')).toHaveValue('')
-  const customBell = () => page.getByRole('button', { name: `设置提醒：${customText}`, exact: true })
   await clickRowButton(customBell())
   await expect(page.locator(`#reminder-${customTask.id}-date`)).toBeFocused()
   await enterDeadline(Date.now() + 2 * 3_600_000, `reminder-${customTask.id}`)
@@ -737,7 +733,7 @@ async function run() {
   await clickRowButton(page.getByRole('button', { name: `删除：${customText}`, exact: true }))
   await saveSettled()
   expect(readStore().todos.some(todo => todo.id === customTask.id)).toBe(false)
-  for (const layout of [...report.customComposerLayout, ...report.customEditorLayout]) {
+  for (const layout of [...report.customInitialEditorLayout, ...report.customEditorLayout]) {
     expect(layout.overflow).toBe(false)
     expect(layout.metadataSingleLine).toBe(true)
     expect(layout.controlsFit).toBe(true)
@@ -797,7 +793,7 @@ async function run() {
   await close()
   await launch()
   await page.screenshot({ path: resolve(artifactDir, 'deadlines-docs.png'), omitBackground: true })
-  await toggleComposer('.deadline-toggle')
+  await page.locator('#new-todo').focus()
   report.minimumHeightLayout = await page.evaluate(() => {
     const widget = document.querySelector('.widget')
     const originalWidth = widget.style.width, originalHeight = widget.style.height
@@ -818,8 +814,8 @@ async function run() {
     expect(layout.tabsDoNotOverlapComposer).toBe(true)
     expect(layout.overflow).toBe(false)
   }
-  await toggleComposer('.deadline-toggle')
-  report.checks.push('Expanded composer remains usable at the minimum 320px height with no tab overlap or clipped footer')
+  await page.getByRole('tab', { name: /^待完成/ }).focus()
+  report.checks.push('Focused text-only composer remains usable at the minimum 320px height with no tab overlap or clipped footer')
   await finish()
 }
 

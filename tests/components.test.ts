@@ -6,15 +6,21 @@ import SettingsPanel from '../src/components/SettingsPanel.vue'
 import { DEFAULT_SETTINGS } from '../src/types'
 
 describe('widget controls', () => {
-  it('adds on submit, clears the draft, and blocks empty input', async () => {
-    const composer = mount(TodoComposer, { props: { disabled: false } })
+  it('keeps focused input text-only, adds on submit, clears the draft, and blocks empty input', async () => {
+    const composer = mount(TodoComposer, { props: { disabled: false }, attachTo: document.body })
     expect(composer.get('input').attributes('placeholder')).toBeUndefined()
+    ;(composer.get('input').element as HTMLInputElement).focus()
     await composer.get('input').setValue('买牛奶')
+    expect(composer.find('.composer-options').exists()).toBe(false)
+    expect(composer.find('input[type="date"], input[type="time"]').exists()).toBe(false)
+    expect(composer.findAll('button')).toHaveLength(1)
+    expect(composer.text()).not.toMatch(/设置 DDL|设置提醒/)
     await composer.get('form').trigger('submit')
     expect(composer.emitted('add')).toEqual([['买牛奶', 'p2', null, null]])
     expect((composer.get('input').element as HTMLInputElement).value).toBe('')
     await composer.get('form').trigger('submit')
     expect(composer.emitted('add')).toHaveLength(1)
+    composer.unmount()
   })
 
   it('does not save an edit while confirming Chinese input composition', async () => {
