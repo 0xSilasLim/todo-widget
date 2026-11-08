@@ -70,7 +70,7 @@ onBeforeUnmount(() => { unlistenClose?.(); unlistenReminders?.() })
         <TodoComposer :disabled="!ready" @add="model.add" />
       </template>
     </template>
-    <footer class="widget-footer"><span role="status" aria-live="polite">{{ saving ? '正在保存…' : error ? '尚未保存' : ready ? '已保存在本机' : '本地待办' }}</span>
+    <footer class="widget-footer" :aria-busy="saving"><span v-if="saving" class="sr-only" role="status">正在保存…</span>
       <span v-if="settings.locked" class="lock-status"><LockKeyhole :size="11" />位置已锁定</span>
       <button v-else class="resize-grip" aria-label="调整窗口大小" title="按住调整窗口大小" :disabled="!ready" @mousedown.left.prevent="resize('SouthEast')"><Grip :size="16" /></button>
     </footer>

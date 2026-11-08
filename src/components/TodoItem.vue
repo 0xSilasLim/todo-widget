@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { Bell, BellRing, Check, Clock, GripVertical, Pencil, Trash2, X } from '@lucide/vue'
-import { DEFAULT_PRIORITY, MAX_TODO_LENGTH, PRIORITY_LABELS, type Priority, type Todo } from '../types'
-import PrioritySelect from './PrioritySelect.vue'
+import { Bell, BellRing, Check, GripVertical, Pencil, Trash2, X } from '@lucide/vue'
+import { MAX_TODO_LENGTH, type Priority, type Todo } from '../types'
 import DeadlineEditor from './DeadlineEditor.vue'
 import ReminderEditor from './ReminderEditor.vue'
 import { deadlineStatus } from '../services/deadlines'
@@ -16,7 +15,6 @@ const emit = defineEmits<{
 const editing = ref(false)
 const confirmingDelete = ref(false)
 const draft = ref('')
-const draftPriority = ref<Priority>(DEFAULT_PRIORITY)
 const draftDeadline = ref<number | null>(null)
 const deadlineValid = ref(true)
 const deadlineEditor = ref<InstanceType<typeof DeadlineEditor>>()
@@ -31,11 +29,6 @@ const editButton = ref<HTMLButtonElement>()
 const deleteButton = ref<HTMLButtonElement>()
 const cancelDeleteButton = ref<HTMLButtonElement>()
 const invalid = ref(false)
-const createdDate = computed(() => props.todo.createdAt == null ? undefined : new Date(props.todo.createdAt))
-const createdTime = computed(() => createdDate.value?.toLocaleString('zh-CN', {
-  month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-}))
-const fullCreatedTime = computed(() => createdDate.value?.toLocaleString('zh-CN', { hourCycle: 'h23' }))
 
 async function requestRemove() {
   if (!props.todo.completed) { emit('remove', props.todo.id); return }
@@ -52,7 +45,6 @@ async function cancelRemove() {
 
 async function beginEdit(focusField: 'text' | 'deadline' | 'reminder' = 'text') {
   draft.value = props.todo.text
-  draftPriority.value = props.todo.priority
   draftDeadline.value = props.todo.dueAt ?? null
   deadlineValid.value = true
   draftReminder.value = props.todo.remindAt ?? null
@@ -68,7 +60,7 @@ async function beginEdit(focusField: 'text' | 'deadline' | 'reminder' = 'text') 
 async function finish(save: boolean) {
   if (save && !draft.value.trim()) { invalid.value = true; return }
   if (save && (!deadlineValid.value || !reminderEditor.value?.validate())) return
-  if (save) emit('edit', props.todo.id, draft.value, draftPriority.value, draftDeadline.value, draftReminder.value)
+  if (save) emit('edit', props.todo.id, draft.value, props.todo.priority, draftDeadline.value, draftReminder.value)
   editing.value = false
   await nextTick()
   editButton.value?.focus()
@@ -109,16 +101,10 @@ function editKey(event: KeyboardEvent) {
             :title="todo.completed ? '永久删除' : '删除'" @click="requestRemove"><Trash2 :size="14" /></button>
         </div>
       </div>
-      <div class="todo-meta">
-        <span class="priority-badge" :class="`priority-${todo.priority}`" :data-priority="todo.priority"
-          :title="`优先级：${todo.priority.toUpperCase()} ${PRIORITY_LABELS[todo.priority]}`"
-          :aria-label="`优先级：${todo.priority.toUpperCase()} ${PRIORITY_LABELS[todo.priority]}`">{{ todo.priority.toUpperCase() }}</span>
-        <time v-if="createdDate" class="todo-created" :datetime="createdDate.toISOString()" :title="`添加于 ${fullCreatedTime}`" :aria-label="`添加于 ${fullCreatedTime}`"><Clock :size="14" aria-hidden="true" />{{ createdTime }}</time>
-        <span v-else class="todo-created">添加时间未知</span>
-        <button class="deadline-badge" :class="[`deadline-${deadline?.tone ?? 'neutral'}`, { 'deadline-unset': !deadline }]" :aria-label="`设置截止时间：${todo.text}`"
+      <div v-if="deadline" class="todo-meta">
+        <button class="deadline-badge" :class="`deadline-${deadline.tone}`" :aria-label="`设置截止时间：${todo.text}`"
           :aria-description="deadlineDetails" :title="deadlineDetails" @click="beginEdit('deadline')">
-          <span v-if="deadline">{{ deadline.tone === 'overdue' ? '逾期' : 'DDL' }} {{ deadline.label }}</span>
-          <span v-else>设置 DDL</span>
+          <span>{{ deadline.tone === 'overdue' ? '逾期' : 'DDL' }} {{ deadline.label }}</span>
         </button>
       </div>
     </template>
@@ -127,7 +113,6 @@ function editKey(event: KeyboardEvent) {
       <textarea :id="`edit-${todo.id}`" ref="input" v-model="draft" :maxlength="MAX_TODO_LENGTH"
         rows="3" :aria-invalid="invalid" :aria-describedby="invalid ? `error-${todo.id}` : undefined" @keydown="editKey" />
       <span v-if="invalid" :id="`error-${todo.id}`" class="field-error" role="alert">请填写待办内容</span>
-      <label class="edit-priority">优先级 <PrioritySelect v-model="draftPriority" label="编辑待办优先级" /><span class="hint">P0 最高 · P3 最低</span></label>
       <DeadlineEditor ref="deadlineEditor" v-model="draftDeadline" :id-prefix="`deadline-${todo.id}`" @validity="deadlineValid = $event" />
       <ReminderEditor ref="reminderEditor" v-model="draftReminder" :id-prefix="`reminder-${todo.id}`" @validity="reminderValid = $event" />
       <p v-if="todo.completed && draftReminder != null" class="hint">已完成的任务不会提醒；恢复后按设置的时间处理。</p>
